@@ -1,0 +1,19 @@
+{
+  "games": [
+    {
+      "name": "Adopt Me",
+      "placeId": 920587237,
+      "supportLevel": 2
+    },
+    {
+      "name": "Brookhaven RP",
+      "placeId": 4924922222,
+      "supportLevel": 1
+    },
+    {
+      "name": "Doors",
+      "placeId": 6516141723,
+      "supportLevel": 3
+    }
+  ]
+}

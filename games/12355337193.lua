@@ -71,6 +71,7 @@ return function(ctx)
     local TARGET_PART = "Head"
     local LOOP_KILL_INTERVAL = 0.01
     local KILL_ALL_INSTANT_DELAY = 0.03
+    local killWeaponMode = "Pistol"
 
     local ShootGunRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ShootGun")
     local StabRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Stab")
@@ -324,27 +325,25 @@ return function(ctx)
     end
 
     local function attackTarget(targetCharacter)
+        if killWeaponMode == "Knife" then
+            local weapon = getEquippedWeapon()
+            if not (weapon and weapon:FindFirstChild("ThrowSound", true)) then
+                if not equipWeaponByType("Knife") then
+                    return false
+                end
+                task.wait(0.05)
+            end
+            return stabKnife(targetCharacter)
+        end
+
         local weapon = getEquippedWeapon()
-        local hasGun = weapon and weapon:FindFirstChild("Fire", true) ~= nil
-        local hasKnife = weapon and weapon:FindFirstChild("ThrowSound", true) ~= nil
-
-        if hasGun then
-            return shootGun(targetCharacter)
-        end
-        if hasKnife then
-            return stabKnife(targetCharacter)
-        end
-
-        if equipWeaponByType("Gun") then
+        if not (weapon and weapon:FindFirstChild("Fire", true)) then
+            if not equipWeaponByType("Gun") then
+                return false
+            end
             task.wait(0.05)
-            return shootGun(targetCharacter)
         end
-        if equipWeaponByType("Knife") then
-            task.wait(0.05)
-            return stabKnife(targetCharacter)
-        end
-
-        return false
+        return shootGun(targetCharacter)
     end
 
     local function killAllInstant()
@@ -590,8 +589,54 @@ return function(ctx)
     return {
         tabs = {
             {
+                Title = "Combat",
+                Icon = "solar:danger-bold-duotone",
+                build = function(tab)
+                    tab:Section({ Title = "Combat" })
+
+                    tab:Dropdown({
+                        Title = "Kill Weapon",
+                        Values = { "Pistol", "Knife" },
+                        Value = killWeaponMode,
+                        Multi = false,
+                        Callback = function(option)
+                            local selected = typeof(option) == "table" and option[1] or option
+                            if selected == "Pistol" or selected == "Knife" then
+                                killWeaponMode = selected
+                            end
+                        end,
+                    })
+
+                    tab:Button({
+                        Title = "Kill All (Instant)",
+                        Callback = function()
+                            killAllInstant()
+                        end,
+                    })
+
+                    tab:Button({
+                        Title = "Loop Kill All",
+                        Callback = function()
+                            loopKillAllEnabled = not loopKillAllEnabled
+                            if loopKillAllEnabled then
+                                startLoopKillAll()
+                            else
+                                stopLoopKillAll()
+                            end
+                            if WindUI then
+                                WindUI:Notify({
+                                    Title = "Loop Kill All",
+                                    Content = loopKillAllEnabled and "Enabled" or "Disabled",
+                                    Duration = 3,
+                                })
+                            end
+                        end,
+                    })
+                end,
+            },
+            {
                 Title = "ESP",
-                Icon = "sfsymbols:target",
+                Icon = "solar:eye-scan-bold-duotone",
                 build = function(tab)
                     tab:Section({ Title = "ESP Main" })
 
@@ -710,34 +755,6 @@ return function(ctx)
                         Transparency = 0,
                         Callback = function(color)
                             state.healthColor = color
-                        end,
-                    })
-
-                    tab:Section({ Title = "Combat" })
-
-                    tab:Button({
-                        Title = "Kill All (Instant)",
-                        Callback = function()
-                            killAllInstant()
-                        end,
-                    })
-
-                    tab:Button({
-                        Title = "Loop Kill All",
-                        Callback = function()
-                            loopKillAllEnabled = not loopKillAllEnabled
-                            if loopKillAllEnabled then
-                                startLoopKillAll()
-                            else
-                                stopLoopKillAll()
-                            end
-                            if WindUI then
-                                WindUI:Notify({
-                                    Title = "Loop Kill All",
-                                    Content = loopKillAllEnabled and "Enabled" or "Disabled",
-                                    Duration = 3,
-                                })
-                            end
                         end,
                     })
                 end,

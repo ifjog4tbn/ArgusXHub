@@ -1,9 +1,11 @@
 return function(ctx)
     local Players = ctx.Players
     local RunService = ctx.RunService or game:GetService("RunService")
+    local WindUI = ctx.WindUI
 
     local LocalPlayer = Players.LocalPlayer
     local Camera = workspace.CurrentCamera
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
     local DEFAULTS = {
         espEnabled = false,
@@ -61,8 +63,21 @@ return function(ctx)
 
     local espCache = {}
     local renderConnection = nil
+    local loopKillAllEnabled = false
+    local loopKillConnection = nil
+    local lastLoopAttack = 0
     local CHAMS_NAME = "ArgusX_ESP_Chams"
     local CHAMS_COLOR = Color3.fromRGB(255, 50, 50)
+    local TARGET_PART = "Head"
+    local LOOP_KILL_INTERVAL = 0.01
+    local KILL_ALL_INSTANT_DELAY = 0.03
+
+    local ShootGunRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ShootGun")
+    local StabRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Stab")
+    local CharacterRayOrigin = nil
+    pcall(function()
+        CharacterRayOrigin = require(ReplicatedStorage.Modules.CharacterRayOrigin)
+    end)
 
     local function createDrawing(kind, properties)
         local drawing = Drawing.new(kind)
@@ -179,6 +194,204 @@ return function(ctx)
         end
 
         return targetTeam ~= myTeam
+    end
+
+    local function isEnemyPlayer(player)
+        return shouldShowPlayer(player)
+    end
+
+    local function getAliveTargets()
+        local targets = {}
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and isEnemyPlayer(player) then
+                local character = player.Character
+                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                if humanoid and humanoid.Health > 0 then
+                    table.insert(targets, player)
+                end
+            end
+        end
+        return targets
+    end
+
+    local function getLocalCharacter()
+        return LocalPlayer and LocalPlayer.Character
+    end
+
+    local function getEquippedWeapon()
+        local character = getLocalCharacter()
+        if not character then
+            return nil
+        end
+        return character:FindFirstChildOfClass("Tool")
+    end
+
+    local function equipWeaponByType(kind)
+        local character = getLocalCharacter()
+        local backpack = LocalPlayer and LocalPlayer:FindFirstChild("Backpack")
+        if not character or not backpack then
+            return nil
+        end
+
+        local current = getEquippedWeapon()
+        if current then
+            current.Parent = backpack
+        end
+
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item:IsA("Tool") then
+                local hasGun = item:FindFirstChild("Fire", true) ~= nil
+                local hasKnife = item:FindFirstChild("ThrowSound", true) ~= nil
+                if (kind == "Gun" and hasGun) or (kind == "Knife" and hasKnife) then
+                    item.Parent = character
+                    return item
+                end
+            end
+        end
+
+        return nil
+    end
+
+    local function shootGun(targetCharacter)
+        if not targetCharacter then
+            return false
+        end
+
+        local character = getLocalCharacter()
+        if not character then
+            return false
+        end
+
+        local part = targetCharacter:FindFirstChild(TARGET_PART) or targetCharacter:FindFirstChild("Head") or targetCharacter:FindFirstChild("HumanoidRootPart")
+        if not part then
+            return false
+        end
+
+        local weapon = getEquippedWeapon()
+        if not (weapon and weapon:FindFirstChild("Fire", true)) then
+            weapon = equipWeaponByType("Gun")
+        end
+        if not weapon then
+            return false
+        end
+
+        local origin = nil
+        if CharacterRayOrigin then
+            local ok, value = pcall(function()
+                return CharacterRayOrigin(character)
+            end)
+            if ok then
+                origin = value
+            end
+        end
+        if origin == nil then
+            local root = character:FindFirstChild("HumanoidRootPart")
+            origin = root and root.Position or Camera.CFrame.Position
+        end
+
+        local targetPos = part.Position
+        pcall(function()
+            weapon:Activate()
+        end)
+        pcall(function()
+            ShootGunRemote:FireServer(origin, targetPos, part, targetPos)
+        end)
+        return true
+    end
+
+    local function stabKnife(targetCharacter)
+        if not targetCharacter then
+            return false
+        end
+
+        local part = targetCharacter:FindFirstChild(TARGET_PART) or targetCharacter:FindFirstChild("Head")
+        if not part then
+            return false
+        end
+
+        local weapon = getEquippedWeapon()
+        if not (weapon and weapon:FindFirstChild("ThrowSound", true)) then
+            weapon = equipWeaponByType("Knife")
+        end
+        if not weapon then
+            return false
+        end
+
+        pcall(function()
+            StabRemote:FireServer(part)
+        end)
+        return true
+    end
+
+    local function attackTarget(targetCharacter)
+        local weapon = getEquippedWeapon()
+        local hasGun = weapon and weapon:FindFirstChild("Fire", true) ~= nil
+        local hasKnife = weapon and weapon:FindFirstChild("ThrowSound", true) ~= nil
+
+        if hasGun then
+            return shootGun(targetCharacter)
+        end
+        if hasKnife then
+            return stabKnife(targetCharacter)
+        end
+
+        if equipWeaponByType("Gun") then
+            task.wait(0.05)
+            return shootGun(targetCharacter)
+        end
+        if equipWeaponByType("Knife") then
+            task.wait(0.05)
+            return stabKnife(targetCharacter)
+        end
+
+        return false
+    end
+
+    local function killAllInstant()
+        local targets = getAliveTargets()
+        for _, player in ipairs(targets) do
+            local character = player.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            if humanoid and humanoid.Health > 0 then
+                attackTarget(character)
+                task.wait(KILL_ALL_INSTANT_DELAY)
+            end
+        end
+    end
+
+    local function startLoopKillAll()
+        if loopKillConnection then
+            return
+        end
+
+        loopKillConnection = RunService.Heartbeat:Connect(function()
+            if not loopKillAllEnabled then
+                return
+            end
+
+            local now = tick()
+            if now - lastLoopAttack < LOOP_KILL_INTERVAL then
+                return
+            end
+
+            local targets = getAliveTargets()
+            for _, player in ipairs(targets) do
+                local character = player.Character
+                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                if humanoid and humanoid.Health > 0 then
+                    attackTarget(character)
+                    lastLoopAttack = now
+                    break
+                end
+            end
+        end)
+    end
+
+    local function stopLoopKillAll()
+        if loopKillConnection then
+            loopKillConnection:Disconnect()
+            loopKillConnection = nil
+        end
     end
 
     local function removeEspForPlayer(player)
@@ -497,6 +710,34 @@ return function(ctx)
                         Transparency = 0,
                         Callback = function(color)
                             state.healthColor = color
+                        end,
+                    })
+
+                    tab:Section({ Title = "Combat" })
+
+                    tab:Button({
+                        Title = "Kill All (Instant)",
+                        Callback = function()
+                            killAllInstant()
+                        end,
+                    })
+
+                    tab:Button({
+                        Title = "Loop Kill All",
+                        Callback = function()
+                            loopKillAllEnabled = not loopKillAllEnabled
+                            if loopKillAllEnabled then
+                                startLoopKillAll()
+                            else
+                                stopLoopKillAll()
+                            end
+                            if WindUI then
+                                WindUI:Notify({
+                                    Title = "Loop Kill All",
+                                    Content = loopKillAllEnabled and "Enabled" or "Disabled",
+                                    Duration = 3,
+                                })
+                            end
                         end,
                     })
                 end,

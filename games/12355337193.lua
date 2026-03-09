@@ -235,12 +235,10 @@ return function(ctx)
         end
 
         if state.espType == "Chams" then
-            hideComponents(components)
             setChams(character, true)
-            return
+        else
+            clearChams(character)
         end
-
-        clearChams(character)
 
         local hrpPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
         if not onScreen or hrpPos.Z <= 0 then

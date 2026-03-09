@@ -11,6 +11,8 @@ return function(ctx)
         tracersEnabled = true,
         healthEnabled = true,
         boxesEnabled = true,
+        targetMode = "Enemy",
+        espType = "Skeleton",
         espMaxDistance = 250,
         tracerMaxDistance = 250,
         skeletonColor = Color3.fromRGB(255, 255, 255),
@@ -24,6 +26,8 @@ return function(ctx)
         tracersEnabled = DEFAULTS.tracersEnabled,
         healthEnabled = DEFAULTS.healthEnabled,
         boxesEnabled = DEFAULTS.boxesEnabled,
+        targetMode = DEFAULTS.targetMode,
+        espType = DEFAULTS.espType,
         espMaxDistance = DEFAULTS.espMaxDistance,
         tracerMaxDistance = DEFAULTS.tracerMaxDistance,
         skeletonColor = DEFAULTS.skeletonColor,
@@ -59,6 +63,8 @@ return function(ctx)
 
     local espCache = {}
     local renderConnection = nil
+    local CHAMS_NAME = "ArgusX_ESP_Chams"
+    local CHAMS_COLOR = Color3.fromRGB(255, 50, 50)
 
     local function createDrawing(kind, properties)
         local drawing = Drawing.new(kind)
@@ -111,9 +117,79 @@ return function(ctx)
         end
     end
 
+    local function clearChams(character)
+        if not character then
+            return
+        end
+
+        local old = character:FindFirstChild(CHAMS_NAME)
+        if old then
+            old:Destroy()
+        end
+    end
+
+    local function setChams(character, enabled)
+        if not character then
+            return
+        end
+
+        if not enabled then
+            clearChams(character)
+            return
+        end
+
+        local highlight = character:FindFirstChild(CHAMS_NAME)
+        if not highlight then
+            highlight = Instance.new("Highlight")
+            highlight.Name = CHAMS_NAME
+            highlight.Parent = character
+        end
+
+        highlight.Adornee = character
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.FillColor = CHAMS_COLOR
+        highlight.OutlineColor = CHAMS_COLOR
+        highlight.FillTransparency = 0.45
+        highlight.OutlineTransparency = 0
+        highlight.Enabled = true
+    end
+
+    local function shouldShowPlayer(player)
+        if state.targetMode == "All" then
+            return true
+        end
+
+        local myTeam = LocalPlayer and LocalPlayer.Team
+        local targetTeam = player.Team
+        local myNeutral = LocalPlayer and LocalPlayer.Neutral
+        local targetNeutral = player.Neutral
+
+        if myNeutral or targetNeutral then
+            return false
+        end
+
+        if not myTeam or not targetTeam then
+            return false
+        end
+
+        if myTeam.Name == "Team1" then
+            return targetTeam.Name == "Team2"
+        end
+
+        if myTeam.Name == "Team2" then
+            return targetTeam.Name == "Team1"
+        end
+
+        return targetTeam ~= myTeam
+    end
+
     local function removeEspForPlayer(player)
         local components = espCache[player]
         if not components then
+            local character = player.Character
+            if character then
+                clearChams(character)
+            end
             return
         end
 
@@ -124,6 +200,11 @@ return function(ctx)
 
         for _, line in pairs(components.SkeletonLines) do
             line:Remove()
+        end
+
+        local character = player.Character
+        if character then
+            clearChams(character)
         end
 
         espCache[player] = nil
@@ -138,14 +219,30 @@ return function(ctx)
 
         if not character or not humanoid or humanoid.Health <= 0 or not hrp or not localRoot then
             hideComponents(components)
+            clearChams(character)
+            return
+        end
+
+        if not shouldShowPlayer(player) then
+            hideComponents(components)
+            clearChams(character)
             return
         end
 
         local distance = (localRoot.Position - hrp.Position).Magnitude
         if distance > state.espMaxDistance then
             hideComponents(components)
+            clearChams(character)
             return
         end
+
+        if state.espType == "Chams" then
+            hideComponents(components)
+            setChams(character, true)
+            return
+        end
+
+        clearChams(character)
 
         local hrpPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
         if not onScreen or hrpPos.Z <= 0 then
@@ -158,10 +255,11 @@ return function(ctx)
         local factor = 1 / (hrpPos.Z * math.tan(math.rad(Camera.FieldOfView * 0.5)) * 2) * 100
         local boxWidth = math.floor(screenHeight / 25 * factor)
         local boxHeight = math.floor(screenWidth / 27 * factor)
+        local boxPosition = Vector2.new(hrpPos.X - (boxWidth / 2), hrpPos.Y - (boxHeight / 2))
 
         if state.boxesEnabled then
             components.Box.Size = Vector2.new(boxWidth, boxHeight)
-            components.Box.Position = Vector2.new(hrpPos.X - (boxWidth / 2), hrpPos.Y - (boxHeight / 2))
+            components.Box.Position = boxPosition
             components.Box.Visible = true
         else
             components.Box.Visible = false
@@ -185,7 +283,7 @@ return function(ctx)
             local healthFraction = math.clamp(humanoid.Health / maxHealth, 0, 1)
 
             components.HealthBar.Outline.Size = Vector2.new(healthBarWidth, healthBarHeight)
-            components.HealthBar.Outline.Position = Vector2.new(components.Box.Position.X - healthBarWidth - 2, components.Box.Position.Y)
+            components.HealthBar.Outline.Position = Vector2.new(boxPosition.X - healthBarWidth - 2, boxPosition.Y)
             components.HealthBar.Outline.Visible = true
 
             components.HealthBar.Fill.Size = Vector2.new(healthBarWidth - 2, healthBarHeight * healthFraction)
@@ -246,6 +344,10 @@ return function(ctx)
 
         for player, components in pairs(espCache) do
             hideComponents(components)
+            local character = player and player.Character
+            if character then
+                clearChams(character)
+            end
         end
     end
 
@@ -280,6 +382,7 @@ return function(ctx)
         tabs = {
             {
                 Title = "ESP",
+                Icon = "sfsymbols:eye",
                 build = function(tab)
                     tab:Section({ Title = "ESP Main" })
 
@@ -328,12 +431,38 @@ return function(ctx)
                         end,
                     })
 
+                    tab:Dropdown({
+                        Title = "ESP Targets",
+                        Values = { "Enemy", "All" },
+                        Value = state.targetMode,
+                        Multi = false,
+                        Callback = function(option)
+                            local selected = typeof(option) == "table" and option[1] or option
+                            if selected == "Enemy" or selected == "All" then
+                                state.targetMode = selected
+                            end
+                        end,
+                    })
+
+                    tab:Dropdown({
+                        Title = "ESP Type",
+                        Values = { "Skeleton", "Chams" },
+                        Value = state.espType,
+                        Multi = false,
+                        Callback = function(option)
+                            local selected = typeof(option) == "table" and option[1] or option
+                            if selected == "Skeleton" or selected == "Chams" then
+                                state.espType = selected
+                            end
+                        end,
+                    })
+
                     tab:Slider({
                         Title = "ESP Max Distance",
                         Step = 1,
                         Value = {
-                            Min = 50,
-                            Max = 2000,
+                            Min = 25,
+                            Max = 300,
                             Default = state.espMaxDistance,
                         },
                         Callback = function(value)
@@ -345,8 +474,8 @@ return function(ctx)
                         Title = "Tracer Max Distance",
                         Step = 1,
                         Value = {
-                            Min = 50,
-                            Max = 2000,
+                            Min = 25,
+                            Max = 300,
                             Default = state.tracerMaxDistance,
                         },
                         Callback = function(value)

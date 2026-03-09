@@ -7,7 +7,6 @@ return function(ctx)
 
     local DEFAULTS = {
         espEnabled = false,
-        skeletonEnabled = true,
         tracersEnabled = true,
         healthEnabled = true,
         boxesEnabled = true,
@@ -22,7 +21,6 @@ return function(ctx)
 
     local state = {
         espEnabled = DEFAULTS.espEnabled,
-        skeletonEnabled = DEFAULTS.skeletonEnabled,
         tracersEnabled = DEFAULTS.tracersEnabled,
         healthEnabled = DEFAULTS.healthEnabled,
         boxesEnabled = DEFAULTS.boxesEnabled,
@@ -313,7 +311,7 @@ return function(ctx)
                 components.SkeletonLines[lineKey] = line
             end
 
-            if state.skeletonEnabled then
+            if state.espType == "Skeleton" then
                 local partA = character:FindFirstChild(pair[1])
                 local partB = character:FindFirstChild(pair[2])
                 if partA and partB then
@@ -382,7 +380,7 @@ return function(ctx)
         tabs = {
             {
                 Title = "ESP",
-                Icon = "sfsymbols:eye",
+                Icon = "sfsymbols:target",
                 build = function(tab)
                     tab:Section({ Title = "ESP Main" })
 
@@ -404,14 +402,6 @@ return function(ctx)
                         Value = state.boxesEnabled,
                         Callback = function(value)
                             state.boxesEnabled = value
-                        end,
-                    })
-
-                    tab:Toggle({
-                        Title = "Show Skeleton",
-                        Value = state.skeletonEnabled,
-                        Callback = function(value)
-                            state.skeletonEnabled = value
                         end,
                     })
 
@@ -446,12 +436,12 @@ return function(ctx)
 
                     tab:Dropdown({
                         Title = "ESP Type",
-                        Values = { "Skeleton", "Chams" },
+                        Values = { "None", "Skeleton", "Chams" },
                         Value = state.espType,
                         Multi = false,
                         Callback = function(option)
                             local selected = typeof(option) == "table" and option[1] or option
-                            if selected == "Skeleton" or selected == "Chams" then
+                            if selected == "None" or selected == "Skeleton" or selected == "Chams" then
                                 state.espType = selected
                             end
                         end,

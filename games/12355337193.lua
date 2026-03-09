@@ -1,497 +1,385 @@
 return function(ctx)
     local Players = ctx.Players
-    local TeleportService = ctx.TeleportService
+    local RunService = ctx.RunService or game:GetService("RunService")
+
+    local LocalPlayer = Players.LocalPlayer
+    local Camera = workspace.CurrentCamera
+
+    local DEFAULTS = {
+        espEnabled = false,
+        skeletonEnabled = true,
+        tracersEnabled = true,
+        healthEnabled = true,
+        boxesEnabled = true,
+        espMaxDistance = 250,
+        tracerMaxDistance = 250,
+        skeletonColor = Color3.fromRGB(255, 255, 255),
+        tracerColor = Color3.fromRGB(255, 255, 255),
+        healthColor = Color3.fromRGB(0, 255, 0),
+    }
+
+    local state = {
+        espEnabled = DEFAULTS.espEnabled,
+        skeletonEnabled = DEFAULTS.skeletonEnabled,
+        tracersEnabled = DEFAULTS.tracersEnabled,
+        healthEnabled = DEFAULTS.healthEnabled,
+        boxesEnabled = DEFAULTS.boxesEnabled,
+        espMaxDistance = DEFAULTS.espMaxDistance,
+        tracerMaxDistance = DEFAULTS.tracerMaxDistance,
+        skeletonColor = DEFAULTS.skeletonColor,
+        tracerColor = DEFAULTS.tracerColor,
+        healthColor = DEFAULTS.healthColor,
+    }
+
+    local bodyConnections = {
+        R15 = {
+            { "Head", "UpperTorso" },
+            { "UpperTorso", "LowerTorso" },
+            { "LowerTorso", "LeftUpperLeg" },
+            { "LowerTorso", "RightUpperLeg" },
+            { "LeftUpperLeg", "LeftLowerLeg" },
+            { "LeftLowerLeg", "LeftFoot" },
+            { "RightUpperLeg", "RightLowerLeg" },
+            { "RightLowerLeg", "RightFoot" },
+            { "UpperTorso", "LeftUpperArm" },
+            { "UpperTorso", "RightUpperArm" },
+            { "LeftUpperArm", "LeftLowerArm" },
+            { "LeftLowerArm", "LeftHand" },
+            { "RightUpperArm", "RightLowerArm" },
+            { "RightLowerArm", "RightHand" },
+        },
+        R6 = {
+            { "Head", "Torso" },
+            { "Torso", "Left Arm" },
+            { "Torso", "Right Arm" },
+            { "Torso", "Left Leg" },
+            { "Torso", "Right Leg" },
+        },
+    }
+
+    local espCache = {}
+    local renderConnection = nil
+
+    local function createDrawing(kind, properties)
+        local drawing = Drawing.new(kind)
+        for prop, value in pairs(properties) do
+            drawing[prop] = value
+        end
+        drawing.Visible = false
+        return drawing
+    end
+
+    local function createComponents()
+        return {
+            Box = createDrawing("Square", {
+                Thickness = 1,
+                Transparency = 1,
+                Color = Color3.fromRGB(255, 255, 255),
+                Filled = false,
+            }),
+            Tracer = createDrawing("Line", {
+                Thickness = 1,
+                Transparency = 1,
+                Color = state.tracerColor,
+            }),
+            HealthBar = {
+                Outline = createDrawing("Square", {
+                    Thickness = 1,
+                    Transparency = 1,
+                    Color = Color3.fromRGB(0, 0, 0),
+                    Filled = false,
+                }),
+                Fill = createDrawing("Square", {
+                    Thickness = 1,
+                    Transparency = 1,
+                    Color = state.healthColor,
+                    Filled = true,
+                }),
+            },
+            SkeletonLines = {},
+        }
+    end
+
+    local function hideComponents(components)
+        components.Box.Visible = false
+        components.Tracer.Visible = false
+        components.HealthBar.Outline.Visible = false
+        components.HealthBar.Fill.Visible = false
+
+        for _, line in pairs(components.SkeletonLines) do
+            line.Visible = false
+        end
+    end
+
+    local function removeEspForPlayer(player)
+        local components = espCache[player]
+        if not components then
+            return
+        end
+
+        components.Box:Remove()
+        components.Tracer:Remove()
+        components.HealthBar.Outline:Remove()
+        components.HealthBar.Fill:Remove()
+
+        for _, line in pairs(components.SkeletonLines) do
+            line:Remove()
+        end
+
+        espCache[player] = nil
+    end
+
+    local function updatePlayerEsp(player, components)
+        local character = player.Character
+        local localCharacter = LocalPlayer and LocalPlayer.Character
+        local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local hrp = character and character:FindFirstChild("HumanoidRootPart")
+
+        if not character or not humanoid or humanoid.Health <= 0 or not hrp or not localRoot then
+            hideComponents(components)
+            return
+        end
+
+        local distance = (localRoot.Position - hrp.Position).Magnitude
+        if distance > state.espMaxDistance then
+            hideComponents(components)
+            return
+        end
+
+        local hrpPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+        if not onScreen or hrpPos.Z <= 0 then
+            hideComponents(components)
+            return
+        end
+
+        local screenWidth = Camera.ViewportSize.X
+        local screenHeight = Camera.ViewportSize.Y
+        local factor = 1 / (hrpPos.Z * math.tan(math.rad(Camera.FieldOfView * 0.5)) * 2) * 100
+        local boxWidth = math.floor(screenHeight / 25 * factor)
+        local boxHeight = math.floor(screenWidth / 27 * factor)
+
+        if state.boxesEnabled then
+            components.Box.Size = Vector2.new(boxWidth, boxHeight)
+            components.Box.Position = Vector2.new(hrpPos.X - (boxWidth / 2), hrpPos.Y - (boxHeight / 2))
+            components.Box.Visible = true
+        else
+            components.Box.Visible = false
+        end
+
+        if state.tracersEnabled and distance <= state.tracerMaxDistance then
+            local from = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+            local to = Vector2.new(hrpPos.X, hrpPos.Y + (boxHeight / 2))
+            components.Tracer.From = from
+            components.Tracer.To = to
+            components.Tracer.Color = state.tracerColor
+            components.Tracer.Visible = true
+        else
+            components.Tracer.Visible = false
+        end
+
+        if state.healthEnabled then
+            local healthBarWidth = 5
+            local healthBarHeight = boxHeight
+            local maxHealth = math.max(humanoid.MaxHealth, 1)
+            local healthFraction = math.clamp(humanoid.Health / maxHealth, 0, 1)
+
+            components.HealthBar.Outline.Size = Vector2.new(healthBarWidth, healthBarHeight)
+            components.HealthBar.Outline.Position = Vector2.new(components.Box.Position.X - healthBarWidth - 2, components.Box.Position.Y)
+            components.HealthBar.Outline.Visible = true
+
+            components.HealthBar.Fill.Size = Vector2.new(healthBarWidth - 2, healthBarHeight * healthFraction)
+            components.HealthBar.Fill.Position = Vector2.new(
+                components.HealthBar.Outline.Position.X + 1,
+                components.HealthBar.Outline.Position.Y + healthBarHeight * (1 - healthFraction)
+            )
+            components.HealthBar.Fill.Color = state.healthColor
+            components.HealthBar.Fill.Visible = true
+        else
+            components.HealthBar.Outline.Visible = false
+            components.HealthBar.Fill.Visible = false
+        end
+
+        local rigKey = humanoid.RigType and humanoid.RigType.Name or "R15"
+        local connections = bodyConnections[rigKey] or bodyConnections.R15
+
+        for _, pair in ipairs(connections) do
+            local lineKey = pair[1] .. "-" .. pair[2]
+            local line = components.SkeletonLines[lineKey]
+            if not line then
+                line = createDrawing("Line", {
+                    Thickness = 1,
+                    Transparency = 1,
+                    Color = state.skeletonColor,
+                })
+                components.SkeletonLines[lineKey] = line
+            end
+
+            if state.skeletonEnabled then
+                local partA = character:FindFirstChild(pair[1])
+                local partB = character:FindFirstChild(pair[2])
+                if partA and partB then
+                    local posA, visibleA = Camera:WorldToViewportPoint(partA.Position)
+                    local posB, visibleB = Camera:WorldToViewportPoint(partB.Position)
+                    if visibleA and visibleB and posA.Z > 0 and posB.Z > 0 then
+                        line.From = Vector2.new(posA.X, posA.Y)
+                        line.To = Vector2.new(posB.X, posB.Y)
+                        line.Color = state.skeletonColor
+                        line.Visible = true
+                    else
+                        line.Visible = false
+                    end
+                else
+                    line.Visible = false
+                end
+            else
+                line.Visible = false
+            end
+        end
+    end
+
+    local function stopEsp()
+        if renderConnection then
+            renderConnection:Disconnect()
+            renderConnection = nil
+        end
+
+        for player, components in pairs(espCache) do
+            hideComponents(components)
+        end
+    end
+
+    local function startEsp()
+        if renderConnection then
+            return
+        end
+
+        renderConnection = RunService.RenderStepped:Connect(function()
+            if not state.espEnabled then
+                return
+            end
+
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer then
+                    local components = espCache[player]
+                    if not components then
+                        components = createComponents()
+                        espCache[player] = components
+                    end
+                    updatePlayerEsp(player, components)
+                end
+            end
+        end)
+    end
+
+    Players.PlayerRemoving:Connect(function(player)
+        removeEspForPlayer(player)
+    end)
 
     return {
         tabs = {
             {
-                Title = "Combat",
+                Title = "ESP",
                 build = function(tab)
-                    tab:Section({ Title = "Kill Aura" })
-
-                    local killAuraEnabled = false
-                    local killAuraRange = 14
-                    local killAuraCooldown = 0.15
-                    local killAuraTeamCheck = true
-                    local killAuraTargetPart = "HumanoidRootPart"
-                    local killAuraThread = nil
-
-                    local function getLocalCharacter()
-                        return Players.LocalPlayer and Players.LocalPlayer.Character
-                    end
-
-                    local function getClosestTarget()
-                        local localPlayer = Players.LocalPlayer
-                        local localCharacter = getLocalCharacter()
-                        if not localPlayer or not localCharacter then
-                            return nil
-                        end
-
-                        local localRoot = localCharacter:FindFirstChild("HumanoidRootPart")
-                        if not localRoot then
-                            return nil
-                        end
-
-                        local bestPlayer = nil
-                        local bestDistance = math.huge
-
-                        for _, player in ipairs(Players:GetPlayers()) do
-                            if player ~= localPlayer then
-                                if not killAuraTeamCheck or player.Team ~= localPlayer.Team then
-                                    local character = player.Character
-                                    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-                                    local targetPart = character and character:FindFirstChild(killAuraTargetPart)
-                                    if humanoid and humanoid.Health > 0 and targetPart then
-                                        local dist = (targetPart.Position - localRoot.Position).Magnitude
-                                        if dist <= killAuraRange and dist < bestDistance then
-                                            bestDistance = dist
-                                            bestPlayer = player
-                                        end
-                                    end
-                                end
-                            end
-                        end
-
-                        return bestPlayer
-                    end
-
-                    local function tryActivateWeapon()
-                        local localPlayer = Players.LocalPlayer
-                        local character = getLocalCharacter()
-                        if not localPlayer or not character then
-                            return
-                        end
-
-                        local backpack = localPlayer:FindFirstChild("Backpack")
-                        local weapon = nil
-                        local names = { "Knife", "Gun", "Revolver", "Sword", "Weapon" }
-
-                        for _, itemName in ipairs(names) do
-                            weapon = character:FindFirstChild(itemName) or (backpack and backpack:FindFirstChild(itemName))
-                            if weapon then
-                                break
-                            end
-                        end
-
-                        if weapon and weapon.Parent ~= character then
-                            local humanoid = character:FindFirstChildOfClass("Humanoid")
-                            if humanoid then
-                                pcall(function()
-                                    humanoid:EquipTool(weapon)
-                                end)
-                            end
-                        end
-
-                        if weapon then
-                            pcall(function()
-                                weapon:Activate()
-                            end)
-                        end
-                    end
-
-                    local function startKillAura()
-                        if killAuraThread then
-                            return
-                        end
-
-                        killAuraThread = task.spawn(function()
-                            while killAuraEnabled do
-                                local localCharacter = getLocalCharacter()
-                                local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
-                                local targetPlayer = getClosestTarget()
-                                local targetCharacter = targetPlayer and targetPlayer.Character
-                                local targetPart = targetCharacter and targetCharacter:FindFirstChild(killAuraTargetPart)
-
-                                if localRoot and targetPart then
-                                    pcall(function()
-                                        localRoot.CFrame = CFrame.new(localRoot.Position, targetPart.Position)
-                                    end)
-                                    tryActivateWeapon()
-                                end
-
-                                task.wait(killAuraCooldown)
-                            end
-
-                            killAuraThread = nil
-                        end)
-                    end
-
-                    tab:Toggle({
-                        Title = "Enable Kill Aura",
-                        Value = false,
-                        Callback = function(value)
-                            killAuraEnabled = value
-                            if value then
-                                startKillAura()
-                            end
-                        end,
-                    })
-
-                    tab:Slider({
-                        Title = "Kill Aura Range",
-                        Step = 1,
-                        Value = {
-                            Min = 5,
-                            Max = 30,
-                            Default = killAuraRange,
-                        },
-                        Callback = function(value)
-                            killAuraRange = value
-                        end,
-                    })
-
-                    tab:Slider({
-                        Title = "Kill Aura Cooldown",
-                        Step = 1,
-                        Value = {
-                            Min = 1,
-                            Max = 20,
-                            Default = 3,
-                        },
-                        Callback = function(value)
-                            killAuraCooldown = value / 100
-                        end,
-                    })
-
-                    tab:Toggle({
-                        Title = "Team Check",
-                        Value = true,
-                        Callback = function(value)
-                            killAuraTeamCheck = value
-                        end,
-                    })
-
-                    tab:Dropdown({
-                        Title = "Target Part",
-                        Values = { "Head", "HumanoidRootPart", "UpperTorso" },
-                        Value = killAuraTargetPart,
-                        Multi = false,
-                        Callback = function(option)
-                            local selected = typeof(option) == "table" and option[1] or option
-                            if selected then
-                                killAuraTargetPart = selected
-                            end
-                        end,
-                    })
-                end,
-            },
-            {
-                Title = "Visual",
-                build = function(tab)
-                    tab:Section({ Title = "ESP" })
-
-                    local espEnabled = false
-                    local espTeamCheck = true
-                    local espShowName = true
-                    local espShowDistance = true
-                    local espRainbow = false
-                    local espLoopThread = nil
-
-                    local function clearVisuals(character)
-                        for _, instance in ipairs(character:GetChildren()) do
-                            if instance.Name == "ArgusX_ESP_Highlight" or instance.Name == "ArgusX_ESP_Tag" then
-                                instance:Destroy()
-                            end
-                        end
-                    end
-
-                    local function applyVisual(player)
-                        local localPlayer = Players.LocalPlayer
-                        local character = player.Character
-                        local localCharacter = localPlayer and localPlayer.Character
-                        local root = character and character:FindFirstChild("HumanoidRootPart")
-                        local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
-                        if not character or not root then
-                            return
-                        end
-
-                        if espTeamCheck and localPlayer and player.Team == localPlayer.Team then
-                            clearVisuals(character)
-                            return
-                        end
-
-                        local highlight = character:FindFirstChild("ArgusX_ESP_Highlight")
-                        if not highlight then
-                            highlight = Instance.new("Highlight")
-                            highlight.Name = "ArgusX_ESP_Highlight"
-                            highlight.FillTransparency = 1
-                            highlight.OutlineTransparency = 0
-                            highlight.Parent = character
-                        end
-                        highlight.Adornee = character
-                        highlight.OutlineColor = espRainbow and Color3.fromHSV((tick() * 0.25) % 1, 1, 1) or Color3.fromRGB(75, 200, 130)
-
-                        local billboard = character:FindFirstChild("ArgusX_ESP_Tag")
-                        if not billboard then
-                            billboard = Instance.new("BillboardGui")
-                            billboard.Name = "ArgusX_ESP_Tag"
-                            billboard.Size = UDim2.new(0, 180, 0, 40)
-                            billboard.StudsOffset = Vector3.new(0, 3.2, 0)
-                            billboard.AlwaysOnTop = true
-                            billboard.Parent = character
-
-                            local label = Instance.new("TextLabel")
-                            label.Name = "Label"
-                            label.Size = UDim2.new(1, 0, 1, 0)
-                            label.BackgroundTransparency = 1
-                            label.TextScaled = true
-                            label.Font = Enum.Font.SourceSansBold
-                            label.TextColor3 = Color3.fromRGB(255, 255, 255)
-                            label.Parent = billboard
-                        end
-
-                        local label = billboard:FindFirstChild("Label")
-                        if label then
-                            local text = ""
-                            if espShowName then
-                                text = player.Name
-                            end
-                            if espShowDistance and localRoot then
-                                local distance = math.floor((root.Position - localRoot.Position).Magnitude)
-                                text = text ~= "" and (text .. " | " .. distance .. "m") or (distance .. "m")
-                            end
-                            if text == "" then
-                                text = "ESP"
-                            end
-                            label.Text = text
-                        end
-                    end
-
-                    local function startESP()
-                        if espLoopThread then
-                            return
-                        end
-
-                        espLoopThread = task.spawn(function()
-                            while espEnabled do
-                                for _, player in ipairs(Players:GetPlayers()) do
-                                    if player ~= Players.LocalPlayer then
-                                        applyVisual(player)
-                                    end
-                                end
-                                task.wait(0.1)
-                            end
-
-                            for _, player in ipairs(Players:GetPlayers()) do
-                                local character = player.Character
-                                if character then
-                                    clearVisuals(character)
-                                end
-                            end
-                            espLoopThread = nil
-                        end)
-                    end
+                    tab:Section({ Title = "ESP Main" })
 
                     tab:Toggle({
                         Title = "Enable ESP",
-                        Value = false,
+                        Value = state.espEnabled,
                         Callback = function(value)
-                            espEnabled = value
+                            state.espEnabled = value
                             if value then
-                                startESP()
+                                startEsp()
+                            else
+                                stopEsp()
                             end
                         end,
                     })
 
                     tab:Toggle({
-                        Title = "Team Check",
-                        Value = true,
+                        Title = "Show Boxes",
+                        Value = state.boxesEnabled,
                         Callback = function(value)
-                            espTeamCheck = value
+                            state.boxesEnabled = value
                         end,
                     })
 
                     tab:Toggle({
-                        Title = "Show Names",
-                        Value = true,
+                        Title = "Show Skeleton",
+                        Value = state.skeletonEnabled,
                         Callback = function(value)
-                            espShowName = value
+                            state.skeletonEnabled = value
                         end,
                     })
 
                     tab:Toggle({
-                        Title = "Show Distance",
-                        Value = true,
+                        Title = "Show Tracers",
+                        Value = state.tracersEnabled,
                         Callback = function(value)
-                            espShowDistance = value
+                            state.tracersEnabled = value
                         end,
                     })
 
                     tab:Toggle({
-                        Title = "Rainbow Mode",
-                        Value = false,
+                        Title = "Show Health Bar",
+                        Value = state.healthEnabled,
                         Callback = function(value)
-                            espRainbow = value
-                        end,
-                    })
-                end,
-            },
-            {
-                Title = "World",
-                build = function(tab)
-                    tab:Section({ Title = "Movement" })
-
-                    local localPlayer = Players.LocalPlayer
-                    local walkSpeedEnabled = false
-                    local walkSpeedValue = 16
-                    local jumpPowerEnabled = false
-                    local jumpPowerValue = 50
-                    local bhopEnabled = false
-                    local spinbotEnabled = false
-                    local spinSpeed = 20
-                    local bigHeadEnabled = false
-                    local bigHeadSize = 4
-                    local noclipEnabled = false
-                    local jobIdValue = ""
-
-                    local function getHumanoid()
-                        local character = localPlayer and localPlayer.Character
-                        return character and character:FindFirstChildOfClass("Humanoid")
-                    end
-
-                    local function applyMovement()
-                        local humanoid = getHumanoid()
-                        if not humanoid then
-                            return
-                        end
-                        humanoid.WalkSpeed = walkSpeedEnabled and walkSpeedValue or 16
-                        humanoid.JumpPower = jumpPowerEnabled and jumpPowerValue or 50
-                    end
-
-                    task.spawn(function()
-                        while true do
-                            local character = localPlayer and localPlayer.Character
-                            local humanoid = getHumanoid()
-                            local root = character and character:FindFirstChild("HumanoidRootPart")
-
-                            if bhopEnabled and humanoid and humanoid.FloorMaterial ~= Enum.Material.Air then
-                                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                            end
-
-                            if spinbotEnabled and root then
-                                root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(spinSpeed), 0)
-                            end
-
-                            if bigHeadEnabled and character then
-                                for _, player in ipairs(Players:GetPlayers()) do
-                                    if player ~= localPlayer and player.Character then
-                                        local head = player.Character:FindFirstChild("Head")
-                                        if head and head:IsA("BasePart") then
-                                            head.Size = Vector3.new(bigHeadSize, bigHeadSize, bigHeadSize)
-                                            head.Massless = true
-                                        end
-                                    end
-                                end
-                            end
-
-                            if noclipEnabled and character then
-                                for _, part in ipairs(character:GetDescendants()) do
-                                    if part:IsA("BasePart") then
-                                        part.CanCollide = false
-                                    end
-                                end
-                            end
-
-                            applyMovement()
-                            task.wait(0.08)
-                        end
-                    end)
-
-                    tab:Toggle({ Title = "Bunny Hop (Auto)", Value = false, Callback = function(value) bhopEnabled = value end })
-                    tab:Toggle({
-                        Title = "Custom WalkSpeed",
-                        Value = false,
-                        Callback = function(value)
-                            walkSpeedEnabled = value
-                            applyMovement()
+                            state.healthEnabled = value
                         end,
                     })
 
                     tab:Slider({
-                        Title = "WalkSpeed",
+                        Title = "ESP Max Distance",
                         Step = 1,
-                        Value = { Min = 16, Max = 200, Default = 16 },
+                        Value = {
+                            Min = 50,
+                            Max = 2000,
+                            Default = state.espMaxDistance,
+                        },
                         Callback = function(value)
-                            walkSpeedValue = value
-                            applyMovement()
-                        end,
-                    })
-
-                    tab:Toggle({
-                        Title = "Custom JumpPower",
-                        Value = false,
-                        Callback = function(value)
-                            jumpPowerEnabled = value
-                            applyMovement()
+                            state.espMaxDistance = tonumber(value) or DEFAULTS.espMaxDistance
                         end,
                     })
 
                     tab:Slider({
-                        Title = "JumpPower",
+                        Title = "Tracer Max Distance",
                         Step = 1,
-                        Value = { Min = 50, Max = 300, Default = 50 },
+                        Value = {
+                            Min = 50,
+                            Max = 2000,
+                            Default = state.tracerMaxDistance,
+                        },
                         Callback = function(value)
-                            jumpPowerValue = value
-                            applyMovement()
+                            state.tracerMaxDistance = tonumber(value) or DEFAULTS.tracerMaxDistance
                         end,
                     })
 
-                    tab:Toggle({ Title = "Spin Bot", Value = false, Callback = function(value) spinbotEnabled = value end })
+                    tab:Section({ Title = "ESP Colors" })
 
-                    tab:Slider({
-                        Title = "Spin Speed",
-                        Step = 1,
-                        Value = { Min = 1, Max = 60, Default = 20 },
-                        Callback = function(value)
-                            spinSpeed = value
+                    tab:Colorpicker({
+                        Title = "Skeleton Color",
+                        Default = state.skeletonColor,
+                        Transparency = 0,
+                        Callback = function(color)
+                            state.skeletonColor = color
                         end,
                     })
 
-                    tab:Toggle({ Title = "Big Head", Value = false, Callback = function(value) bigHeadEnabled = value end })
-
-                    tab:Slider({
-                        Title = "Head Size",
-                        Step = 1,
-                        Value = { Min = 2, Max = 20, Default = 4 },
-                        Callback = function(value)
-                            bigHeadSize = value
+                    tab:Colorpicker({
+                        Title = "Tracer Color",
+                        Default = state.tracerColor,
+                        Transparency = 0,
+                        Callback = function(color)
+                            state.tracerColor = color
                         end,
                     })
 
-                    tab:Toggle({ Title = "No Clip", Value = false, Callback = function(value) noclipEnabled = value end })
-
-                    tab:Section({ Title = "Server Rejoin" })
-                    tab:Button({
-                        Title = "Rejoin Same Server",
-                        Callback = function()
-                            pcall(function()
-                                TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, localPlayer)
-                            end)
-                        end,
-                    })
-                    tab:Button({
-                        Title = "Rejoin Random Server",
-                        Callback = function()
-                            pcall(function()
-                                TeleportService:Teleport(game.PlaceId)
-                            end)
-                        end,
-                    })
-                    tab:Input({
-                        Title = "Custom JobId",
-                        Placeholder = "Paste server JobId",
-                        Callback = function(value)
-                            jobIdValue = tostring(value or "")
-                        end,
-                    })
-                    tab:Button({
-                        Title = "Rejoin from JobId",
-                        Callback = function()
-                            if jobIdValue ~= "" then
-                                pcall(function()
-                                    TeleportService:TeleportToPlaceInstance(game.PlaceId, jobIdValue, localPlayer)
-                                end)
-                            end
+                    tab:Colorpicker({
+                        Title = "Health Color",
+                        Default = state.healthColor,
+                        Transparency = 0,
+                        Callback = function(color)
+                            state.healthColor = color
                         end,
                     })
                 end,

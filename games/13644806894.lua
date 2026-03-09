@@ -17,26 +17,20 @@ return function(ctx)
                             localPlayer.Team = team
                             WindUI:Notify({
                                 Title = "Argus X",
-                                Content = "Team changed to: " .. teamName,
+                                Content = "(Visual only) Team changed, reset pls.",
                                 Duration = 4,
                             })
-                        else
-                            WindUI:Notify({
-                                Title = "Argus X",
-                                Content = "Team not found: " .. teamName,
-                                Duration = 4,
-                            })
-                        end
+                        else end
                     end
 
-                    tab:Button({ Title = "Set Team: Civilian", Callback = function() setTeam("Civilian") end })
-                    tab:Button({ Title = "Set Team: Basic Training", Callback = function() setTeam("Basic Training") end })
-                    tab:Button({ Title = "Set Team: Police Department", Callback = function() setTeam("Police Department") end })
-                    tab:Button({ Title = "Set Team: Academy Security Unit", Callback = function() setTeam("Academy Security Unit") end })
-                    tab:Button({ Title = "Set Team: SWAT", Callback = function() setTeam("Special Weapons & Tactics") end })
-                    tab:Button({ Title = "Set Team: Traffic Unit", Callback = function() setTeam("Traffic Unit") end })
-                    tab:Button({ Title = "Set Team: Training & Discipline", Callback = function() setTeam("Training & Discipline") end })
-                    tab:Button({ Title = "Set Team: Police Headquarters", Callback = function() setTeam("Police Headquarters") end })
+                    tab:Button({ Title = "Civilian", Callback = function() setTeam("Civilian") end })
+                    tab:Button({ Title = "Basic Training", Callback = function() setTeam("Basic Training") end })
+                    tab:Button({ Title = "Police Department", Callback = function() setTeam("Police Department") end })
+                    tab:Button({ Title = "Academy Security Unit", Callback = function() setTeam("Academy Security Unit") end })
+                    tab:Button({ Title = "SWAT", Callback = function() setTeam("Special Weapons & Tactics") end })
+                    tab:Button({ Title = "Traffic Unit", Callback = function() setTeam("Traffic Unit") end })
+                    tab:Button({ Title = "Training & Discipline", Callback = function() setTeam("Training & Discipline") end })
+                    tab:Button({ Title = "Police Headquarters", Callback = function() setTeam("Police Headquarters") end })
                 end,
             },
             {
@@ -97,16 +91,16 @@ return function(ctx)
                         end
                     end
 
-                    tab:Button({ Title = "Get Tool: MFD", Callback = function() cloneTool("MFD") end })
-                    tab:Button({ Title = "Get Tool: Clipboard", Callback = function() cloneTool("Clipboard") end })
-                    tab:Button({ Title = "Get Tool: Base Access", Callback = function() cloneTool("Base Access") end })
-                    tab:Button({ Title = "Get Tool: Props", Callback = function() cloneTool("Props") end })
-                    tab:Button({ Title = "Get Tool: BoomBox", Callback = function() cloneTool("BoomBox") end })
-                    tab:Button({ Title = "Get Tool: X7", Callback = function() cloneTool("X7") end })
-                    tab:Button({ Title = "Get Tool: Breach Shield", Callback = function() cloneTool("Breach Shield") end })
-                    tab:Button({ Title = "Get Tool: Riot Shield", Callback = function() cloneTool("Riot Shield") end })
-                    tab:Button({ Title = "Get Tool: Flashlight", Callback = function() cloneTool("Flashlight") end })
-                    tab:Button({ Title = "Get Tool: Honey Badger", Callback = function() cloneTool("Honey Badger") end })
+                    tab:Button({ Title = "MFD", Callback = function() cloneTool("MFD") end })
+                    tab:Button({ Title = "Clipboard", Callback = function() cloneTool("Clipboard") end })
+                    tab:Button({ Title = "Base Access", Callback = function() cloneTool("Base Access") end })
+                    tab:Button({ Title = "Props", Callback = function() cloneTool("Props") end })
+                    tab:Button({ Title = "BoomBox", Callback = function() cloneTool("BoomBox") end })
+                    tab:Button({ Title = "X7", Callback = function() cloneTool("X7") end })
+                    tab:Button({ Title = "Breach Shield", Callback = function() cloneTool("Breach Shield") end })
+                    tab:Button({ Title = "Riot Shield", Callback = function() cloneTool("Riot Shield") end })
+                    tab:Button({ Title = "Flashlight", Callback = function() cloneTool("Flashlight") end })
+                    tab:Button({ Title = "Honey Badger", Callback = function() cloneTool("Honey Badger") end })
                 end,
             },
         },

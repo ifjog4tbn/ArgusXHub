@@ -393,6 +393,91 @@ return function(ctx)
         end
     end
 
+    local function colorToArray(color)
+        return {
+            math.floor((color.R or 0) * 255 + 0.5),
+            math.floor((color.G or 0) * 255 + 0.5),
+            math.floor((color.B or 0) * 255 + 0.5),
+        }
+    end
+
+    local function arrayToColor(value, fallback)
+        if type(value) == "table" and #value >= 3 then
+            local r = tonumber(value[1]) or 255
+            local g = tonumber(value[2]) or 255
+            local b = tonumber(value[3]) or 255
+            return Color3.fromRGB(math.clamp(r, 0, 255), math.clamp(g, 0, 255), math.clamp(b, 0, 255))
+        end
+        return fallback
+    end
+
+    local function getConfigState()
+        return {
+            espEnabled = state.espEnabled,
+            tracersEnabled = state.tracersEnabled,
+            healthEnabled = state.healthEnabled,
+            boxesEnabled = state.boxesEnabled,
+            targetMode = state.targetMode,
+            espType = state.espType,
+            espMaxDistance = state.espMaxDistance,
+            tracerMaxDistance = state.tracerMaxDistance,
+            skeletonColor = colorToArray(state.skeletonColor),
+            tracerColor = colorToArray(state.tracerColor),
+            healthColor = colorToArray(state.healthColor),
+            killWeaponMode = killWeaponMode,
+            loopKillAllEnabled = loopKillAllEnabled,
+        }
+    end
+
+    local function applyConfigState(payload)
+        if type(payload) ~= "table" then
+            return false, "Invalid config payload."
+        end
+
+        state.espEnabled = payload.espEnabled == true
+        state.tracersEnabled = payload.tracersEnabled ~= false
+        state.healthEnabled = payload.healthEnabled ~= false
+        state.boxesEnabled = payload.boxesEnabled ~= false
+
+        local targetMode = tostring(payload.targetMode or state.targetMode)
+        if targetMode == "Enemy" or targetMode == "All" then
+            state.targetMode = targetMode
+        end
+
+        local espType = tostring(payload.espType or state.espType)
+        if espType == "None" or espType == "Skeleton" or espType == "Chams" then
+            state.espType = espType
+        end
+
+        state.espMaxDistance = math.clamp(tonumber(payload.espMaxDistance) or state.espMaxDistance, 25, 300)
+        state.tracerMaxDistance = math.clamp(tonumber(payload.tracerMaxDistance) or state.tracerMaxDistance, 25, 300)
+
+        state.skeletonColor = arrayToColor(payload.skeletonColor, state.skeletonColor)
+        state.tracerColor = arrayToColor(payload.tracerColor, state.tracerColor)
+        state.healthColor = arrayToColor(payload.healthColor, state.healthColor)
+
+        local weaponMode = tostring(payload.killWeaponMode or killWeaponMode)
+        if weaponMode == "Pistol" or weaponMode == "Knife" then
+            killWeaponMode = weaponMode
+        end
+
+        local nextLoopState = payload.loopKillAllEnabled == true
+        loopKillAllEnabled = nextLoopState
+        if nextLoopState then
+            startLoopKillAll()
+        else
+            stopLoopKillAll()
+        end
+
+        if state.espEnabled then
+            startEsp()
+        else
+            stopEsp()
+        end
+
+        return true
+    end
+
     local function removeEspForPlayer(player)
         local components = espCache[player]
         if not components then
@@ -614,11 +699,12 @@ return function(ctx)
                         end,
                     })
 
-                    tab:Button({
+                    tab:Toggle({
                         Title = "Loop Kill All",
-                        Callback = function()
-                            loopKillAllEnabled = not loopKillAllEnabled
-                            if loopKillAllEnabled then
+                        Value = false,
+                        Callback = function(value)
+                            loopKillAllEnabled = value
+                            if value then
                                 startLoopKillAll()
                             else
                                 stopLoopKillAll()
@@ -626,7 +712,7 @@ return function(ctx)
                             if WindUI then
                                 WindUI:Notify({
                                     Title = "Loop Kill All",
-                                    Content = loopKillAllEnabled and "Enabled" or "Disabled",
+                                    Content = value and "Enabled" or "Disabled",
                                     Duration = 3,
                                 })
                             end
@@ -760,5 +846,7 @@ return function(ctx)
                 end,
             },
         },
+        getConfigState = getConfigState,
+        applyConfigState = applyConfigState,
     }
 end

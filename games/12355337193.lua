@@ -72,7 +72,6 @@ return function(ctx)
     local LOOP_KILL_INTERVAL = 0.01
     local KILL_ALL_INSTANT_DELAY = 0.03
     local KILL_ALL_MAX_DIST = 200
-    local killWeaponMode = "Pistol"
 
     local ShootGunRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ShootGun")
 
@@ -230,21 +229,14 @@ return function(ctx)
         return tool:FindFirstChild("Reload", true) ~= nil and tool:FindFirstChild("Fire", true) ~= nil
     end
 
-    local function findToolByMode(mode)
+    local function findPistolTool()
         local character = getLocalCharacter()
         local backpack = LocalPlayer and LocalPlayer:FindFirstChild("Backpack")
         local function matches(tool)
             if not tool or not tool:IsA("Tool") then
                 return false
             end
-            local hasRF = hasReloadAndFire(tool)
-            if mode == "Pistol" then
-                return hasRF
-            end
-            if mode == "Knife" then
-                return not hasRF
-            end
-            return false
+            return hasReloadAndFire(tool)
         end
 
         if backpack then
@@ -306,7 +298,7 @@ return function(ctx)
             return
         end
 
-        local tool = findToolByMode(killWeaponMode)
+        local tool = findPistolTool()
         if not tool then
             return
         end
@@ -355,7 +347,7 @@ return function(ctx)
                 return
             end
 
-            local tool = findToolByMode(killWeaponMode)
+            local tool = findPistolTool()
             if not tool then
                 return
             end
@@ -417,7 +409,6 @@ return function(ctx)
             skeletonColor = colorToArray(state.skeletonColor),
             tracerColor = colorToArray(state.tracerColor),
             healthColor = colorToArray(state.healthColor),
-            killWeaponMode = killWeaponMode,
             loopKillAllEnabled = loopKillAllEnabled,
         }
     end
@@ -448,11 +439,6 @@ return function(ctx)
         state.skeletonColor = arrayToColor(payload.skeletonColor, state.skeletonColor)
         state.tracerColor = arrayToColor(payload.tracerColor, state.tracerColor)
         state.healthColor = arrayToColor(payload.healthColor, state.healthColor)
-
-        local weaponMode = tostring(payload.killWeaponMode or killWeaponMode)
-        if weaponMode == "Pistol" or weaponMode == "Knife" then
-            killWeaponMode = weaponMode
-        end
 
         local nextLoopState = payload.loopKillAllEnabled == true
         loopKillAllEnabled = nextLoopState
@@ -671,19 +657,6 @@ return function(ctx)
                 Icon = "solar:danger-bold-duotone",
                 build = function(tab)
                     tab:Section({ Title = "Combat" })
-
-                    tab:Dropdown({
-                        Title = "Kill Weapon",
-                        Values = { "Pistol", "Knife" },
-                        Value = killWeaponMode,
-                        Multi = false,
-                        Callback = function(option)
-                            local selected = typeof(option) == "table" and option[1] or option
-                            if selected == "Pistol" or selected == "Knife" then
-                                killWeaponMode = selected
-                            end
-                        end,
-                    })
 
                     tab:Button({
                         Title = "Kill All (Instant)",

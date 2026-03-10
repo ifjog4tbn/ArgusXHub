@@ -24,6 +24,150 @@ return function(ctx)
                         end,
                     })
 
+                    tab:Button({
+                        Title = "Disable notification ads",
+                        Callback = function()
+                            local player = Players.LocalPlayer
+                            if not player then
+                                return
+                            end
+
+                            local playerGui = player:FindFirstChild("PlayerGui") or player:WaitForChild("PlayerGui")
+                            local mainGui = playerGui and playerGui:FindFirstChild("Main")
+                            local notifications = mainGui and mainGui:FindFirstChild("Notifications")
+                            local manager = notifications and notifications:FindFirstChild("NotificationsManager")
+                            if manager and manager:IsA("LocalScript") then
+                                manager:Destroy()
+                            end
+
+                            if not notifications or not manager then
+                                return
+                            end
+
+                            if notifications:FindFirstChild("ArgusX_NotificationsManager") then
+                                return
+                            end
+
+                            local tag = Instance.new("BoolValue")
+                            tag.Name = "ArgusX_NotificationsManager"
+                            tag.Parent = notifications
+
+                            local TweenService = game:GetService("TweenService")
+                            local remote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("Misc"):WaitForChild("ErrorSend")
+                            local cache = {}
+
+                            local function getStackedTitle(title, count)
+                                if count > 1 then
+                                    return title .. " [x" .. tostring(count) .. "]"
+                                end
+                                return title
+                            end
+
+                            remote.OnClientEvent:Connect(function(message, color, author)
+                                if message == "🎁 Join Discord server for leaks and exclusive codes!" then
+                                    warn("stupid ad detected!")
+                                    return
+                                end
+
+                                local key = tostring(message) .. "|" .. tostring(author or "")
+                                if cache[key] then
+                                    local entry = cache[key]
+                                    entry.count += 1
+                                    local textLabel = entry.instance:FindFirstChild("TextLabel")
+                                    if textLabel then
+                                        textLabel.Text = getStackedTitle(message, entry.count)
+                                    end
+                                    if manager:FindFirstChild("Sound") then
+                                        manager.Sound:Play()
+                                    end
+                                    if entry.destroyConnection then
+                                        task.cancel(entry.destroyConnection)
+                                    end
+                                    entry.destroyConnection = task.delay(10, function()
+                                        local imageLabel = entry.instance:FindFirstChild("ImageLabel")
+                                        if imageLabel then
+                                            TweenService:Create(imageLabel, TweenInfo.new(0.2, Enum.EasingStyle.Cubic, Enum.EasingDirection.InOut), {
+                                                ImageTransparency = 1,
+                                            }):Play()
+                                        end
+                                        local label = entry.instance:FindFirstChild("TextLabel")
+                                        if label then
+                                            TweenService:Create(label, TweenInfo.new(0.2, Enum.EasingStyle.Cubic, Enum.EasingDirection.InOut), {
+                                                TextTransparency = 1,
+                                            }):Play()
+                                        end
+                                        task.wait(0.2)
+                                        entry.instance:Destroy()
+                                        cache[key] = nil
+                                    end)
+                                else
+                                    local template = manager.Parent and manager.Parent:FindFirstChild("Notification_UI")
+                                    if not template then
+                                        return
+                                    end
+                                    local clone = template:Clone()
+                                    clone.Parent = manager.Parent:FindFirstChild("Actions") or manager.Parent
+                                    local textLabel = clone:FindFirstChild("TextLabel")
+                                    if textLabel then
+                                        textLabel.Text = message
+                                        textLabel.TextColor3 = color or Color3.fromRGB(255, 255, 255)
+                                    end
+                                    local authorLabel = clone:FindFirstChild("Author")
+                                    if author and authorLabel then
+                                        authorLabel.Text = author
+                                        if author == "InkKingRBLX" then
+                                            clone.Verify.Visible = true
+                                        else
+                                            clone.Verify.Visible = false
+                                        end
+                                        clone.Dots.Visible = true
+                                        clone.Nothing.Visible = true
+                                        if textLabel then
+                                            textLabel.TextXAlignment = Enum.TextXAlignment.Left
+                                        end
+                                    elseif authorLabel then
+                                        authorLabel.Visible = false
+                                        clone.Verify.Visible = false
+                                        clone.Dots.Visible = false
+                                        clone.Nothing.Visible = false
+                                        if textLabel then
+                                            textLabel.TextXAlignment = Enum.TextXAlignment.Center
+                                        end
+                                    end
+                                    clone.Visible = true
+                                    clone.Size = UDim2.new(0.752, 0, 0, 0)
+                                    TweenService:Create(clone, TweenInfo.new(0.1, Enum.EasingStyle.Cubic, Enum.EasingDirection.InOut), {
+                                        Size = UDim2.new(0.752, 0, 0.075, 0),
+                                    }):Play()
+                                    if manager:FindFirstChild("Sound") then
+                                        manager.Sound:Play()
+                                    end
+                                    cache[key] = {
+                                        instance = clone,
+                                        count = 1,
+                                        destroyConnection = task.delay(10, function()
+                                            local imageLabel = clone:FindFirstChild("ImageLabel")
+                                            if imageLabel then
+                                                TweenService:Create(imageLabel, TweenInfo.new(0.2, Enum.EasingStyle.Cubic, Enum.EasingDirection.InOut), {
+                                                    ImageTransparency = 1,
+                                                }):Play()
+                                            end
+                                            local label = clone:FindFirstChild("TextLabel")
+                                            if label then
+                                                TweenService:Create(label, TweenInfo.new(0.2, Enum.EasingStyle.Cubic, Enum.EasingDirection.InOut), {
+                                                    TextTransparency = 1,
+                                                }):Play()
+                                            end
+                                            task.wait(0.2)
+                                            clone:Destroy()
+                                            cache[key] = nil
+                                        end),
+                                    }
+                                end
+                            end)
+                        end,
+                    })
+
                     tab:Paragraph({
                         Title = "Teleports",
                         Desc = "TP to any systems positions",

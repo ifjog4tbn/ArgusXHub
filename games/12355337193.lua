@@ -75,11 +75,6 @@ return function(ctx)
     local killWeaponMode = "Pistol"
 
     local ShootGunRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ShootGun")
-    local StabRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Stab")
-    local CharacterRayOrigin = nil
-    pcall(function()
-        CharacterRayOrigin = require(ReplicatedStorage.Modules.CharacterRayOrigin)
-    end)
 
     local function createDrawing(kind, properties)
         local drawing = Drawing.new(kind)
@@ -285,123 +280,20 @@ return function(ctx)
         end
     end
 
-    local function equipWeaponByType(kind)
-        local character = getLocalCharacter()
-        local backpack = LocalPlayer and LocalPlayer:FindFirstChild("Backpack")
-        if not character or not backpack then
-            return nil
+    local function killWithShootGun(localRoot, targetRoot)
+        if not localRoot or not targetRoot then
+            return
         end
-
-        local current = getEquippedWeapon()
-        if current then
-            current.Parent = backpack
+        local myPos = localRoot.Position
+        local victimPos = targetRoot.Position
+        local dir = victimPos - myPos
+        if dir.Magnitude <= 0 then
+            return
         end
-
-        for _, item in ipairs(backpack:GetChildren()) do
-            if item:IsA("Tool") then
-                local hasGun = item:FindFirstChild("Fire", true) ~= nil
-                local hasKnife = item:FindFirstChild("ThrowSound", true) ~= nil
-                if (kind == "Gun" and hasGun) or (kind == "Knife" and hasKnife) then
-                    item.Parent = character
-                    return item
-                end
-            end
-        end
-
-        return nil
-    end
-
-    local function shootGun(targetCharacter)
-        if not targetCharacter then
-            return false
-        end
-
-        local character = getLocalCharacter()
-        if not character then
-            return false
-        end
-
-        local part = targetCharacter:FindFirstChild(TARGET_PART) or targetCharacter:FindFirstChild("Head") or targetCharacter:FindFirstChild("HumanoidRootPart")
-        if not part then
-            return false
-        end
-
-        local weapon = getEquippedWeapon()
-        if not (weapon and weapon:FindFirstChild("Fire", true)) then
-            weapon = equipWeaponByType("Gun")
-        end
-        if not weapon then
-            return false
-        end
-
-        local origin = nil
-        if CharacterRayOrigin then
-            local ok, value = pcall(function()
-                return CharacterRayOrigin(character)
-            end)
-            if ok then
-                origin = value
-            end
-        end
-        if origin == nil then
-            local root = character:FindFirstChild("HumanoidRootPart")
-            origin = root and root.Position or Camera.CFrame.Position
-        end
-
-        local targetPos = part.Position
+        local thirdPos = victimPos + dir.Unit * 50
         pcall(function()
-            weapon:Activate()
+            ShootGunRemote:FireServer(myPos, thirdPos, targetRoot, victimPos)
         end)
-        pcall(function()
-            ShootGunRemote:FireServer(origin, targetPos, part, targetPos)
-        end)
-        return true
-    end
-
-    local function stabKnife(targetCharacter)
-        if not targetCharacter then
-            return false
-        end
-
-        local part = targetCharacter:FindFirstChild(TARGET_PART) or targetCharacter:FindFirstChild("Head")
-        if not part then
-            return false
-        end
-
-        local weapon = getEquippedWeapon()
-        if not (weapon and weapon:FindFirstChild("ThrowSound", true)) then
-            weapon = equipWeaponByType("Knife")
-        end
-        if not weapon then
-            return false
-        end
-
-        pcall(function()
-            StabRemote:FireServer(part)
-        end)
-        return true
-    end
-
-    local function attackTarget(targetCharacter)
-        if killWeaponMode == "Knife" then
-            local weapon = getEquippedWeapon()
-            if not (weapon and weapon:FindFirstChild("ThrowSound", true)) then
-                if not equipWeaponByType("Knife") then
-                    return false
-                end
-                task.wait(0.05)
-            end
-            return stabKnife(targetCharacter)
-        end
-
-        local weapon = getEquippedWeapon()
-        if not (weapon and weapon:FindFirstChild("Fire", true)) then
-            if not equipWeaponByType("Gun") then
-                return false
-            end
-            task.wait(0.05)
-        end
-        return shootGun(targetCharacter)
     end
 
     local function killAllInstant()
@@ -429,21 +321,7 @@ return function(ctx)
                 if targetRoot and humanoid and humanoid.Health > 1 then
                     local dist = (targetRoot.Position - localRoot.Position).Magnitude
                     if dist <= KILL_ALL_MAX_DIST then
-                        if killWeaponMode == "Pistol" then
-                            local myPos = localRoot.Position
-                            local victimPos = targetRoot.Position
-                            local dir = victimPos - myPos
-                            if dir.Magnitude > 0 then
-                                local thirdPos = victimPos + dir.Unit * 50
-                                pcall(function()
-                                    ShootGunRemote:FireServer(myPos, thirdPos, targetRoot, victimPos)
-                                end)
-                            end
-                        else
-                            pcall(function()
-                                StabRemote:FireServer(targetRoot)
-                            end)
-                        end
+                        killWithShootGun(localRoot, targetRoot)
                         task.wait(KILL_ALL_INSTANT_DELAY)
                     end
                 end
@@ -471,15 +349,33 @@ return function(ctx)
                 return
             end
 
+            local character = getLocalCharacter()
+            local localRoot = character and character:FindFirstChild("HumanoidRootPart")
+            if not character or not localRoot then
+                return
+            end
+
+            local tool = findToolByMode(killWeaponMode)
+            if not tool then
+                return
+            end
+            equipTool(tool)
+
             local targets = getAliveTargets()
             for _, player in ipairs(targets) do
-                local character = player.Character
-                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-                if humanoid and humanoid.Health > 1 then
-                    attackTarget(character)
-                    lastLoopAttack = now
+                local targetChar = player.Character
+                local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+                local humanoid = targetChar and targetChar:FindFirstChildOfClass("Humanoid")
+                if targetRoot and humanoid and humanoid.Health > 1 then
+                    local dist = (targetRoot.Position - localRoot.Position).Magnitude
+                    if dist <= KILL_ALL_MAX_DIST then
+                        killWithShootGun(localRoot, targetRoot)
+                        lastLoopAttack = now
+                    end
                 end
             end
+
+            unequipTool(tool)
         end)
     end
 

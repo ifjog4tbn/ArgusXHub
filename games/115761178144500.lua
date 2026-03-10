@@ -8,6 +8,74 @@ return function(ctx)
                 Icon = "solar:compass-big-bold-duotone",
                 build = function(tab)
                     tab:Button({
+                        Title = "Unlock trades",
+                        Callback = function()
+                            local Players = game:GetService("Players")
+                            local RunService = game:GetService("RunService")
+
+                            local player = Players.LocalPlayer
+                            local gui = player and player:WaitForChild("PlayerGui"):WaitForChild("Main")
+                            if not gui then
+                                return
+                            end
+
+                            local tradeBtn = gui.NewButtons.TradingRequests
+                            local decor = tradeBtn and tradeBtn:FindFirstChild("Decor")
+                            if not tradeBtn or not decor then
+                                return
+                            end
+
+                            local function ensureOverlay()
+                                local overlay = decor:FindFirstChild("ArgusX_TradeText")
+                                if overlay then
+                                    return overlay
+                                end
+
+                                local src = decor:FindFirstChild("Title")
+                                if not src then
+                                    return nil
+                                end
+
+                                src.Visible = false
+
+                                local clone = src:Clone()
+                                clone.Name = "ArgusX_TradeText"
+                                clone.Parent = decor
+                                clone.Visible = true
+                                clone.ZIndex = src.ZIndex + 5
+                                clone.Text = "Trade"
+                                return clone
+                            end
+
+                            local function apply()
+                                tradeBtn.Trigger.Interactable = true
+                                tradeBtn.BackgroundColor3 = Color3.fromRGB(116, 84, 9)
+                                decor.BackgroundColor3 = Color3.fromRGB(255, 190, 37)
+
+                                local overlay = ensureOverlay()
+                                if overlay then
+                                    overlay.Text = "Trade"
+                                    overlay.TextTransparency = 0
+                                end
+
+                                local original = decor:FindFirstChild("Title")
+                                if original then
+                                    original.Visible = false
+                                end
+
+                                gui.Settings.ScrollingFrame.Trades.Visible = true
+                            end
+
+                            if not decor:FindFirstChild("ArgusX_TradeFix") then
+                                local tag = Instance.new("BoolValue")
+                                tag.Name = "ArgusX_TradeFix"
+                                tag.Parent = decor
+                                RunService.RenderStepped:Connect(apply)
+                            end
+                        end,
+                    })
+
+                    tab:Button({
                         Title = "Remove Prompt Favorite",
                         Desc = "Removing stupid ad",
                         Callback = function()

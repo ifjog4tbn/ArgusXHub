@@ -5,7 +5,7 @@ return function(ctx)
         tabs = {
             {
                 Title = "Lobby",
-                Icon = "solar:lock-keyhole-unlocked-bold-duotone",
+                Icon = "solar:compass-big-bold-duotone",
                 build = function(tab)
                     tab:Button({
                         Title = "Remove Prompt Favorite",

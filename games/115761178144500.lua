@@ -38,6 +38,7 @@ return function(ctx)
                         end
                     end
 
+                    tab:Button({ Title = "Spawn", Callback = function() tp(126, 116, 321) end })
                     tab:Button({ Title = "Summon", Callback = function() tp(295, 135, 318) end })
                     tab:Button({ Title = "Exclusive Unit", Callback = function() tp(294, 135, 289) end })
                     tab:Button({ Title = "Season Pass", Callback = function() tp(188, 110, 223) end })

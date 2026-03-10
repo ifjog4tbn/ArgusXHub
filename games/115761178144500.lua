@@ -37,7 +37,7 @@ return function(ctx)
                             local notifications = mainGui and mainGui:FindFirstChild("Notifications")
                             local manager = notifications and notifications:FindFirstChild("NotificationsManager")
                             if manager and manager:IsA("LocalScript") then
-                                manager:Destroy()
+                                manager.Disabled = true
                             end
 
                             if not notifications or not manager then

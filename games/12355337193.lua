@@ -71,6 +71,7 @@ return function(ctx)
     local TARGET_PART = "Head"
     local LOOP_KILL_INTERVAL = 0.01
     local KILL_ALL_INSTANT_DELAY = 0.03
+    local KILL_ALL_MAX_DIST = 200
     local killWeaponMode = "Pistol"
 
     local ShootGunRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("ShootGun")
@@ -227,6 +228,63 @@ return function(ctx)
         return character:FindFirstChildOfClass("Tool")
     end
 
+    local function hasReloadAndFire(tool)
+        if not tool then
+            return false
+        end
+        return tool:FindFirstChild("Reload", true) ~= nil and tool:FindFirstChild("Fire", true) ~= nil
+    end
+
+    local function findToolByMode(mode)
+        local character = getLocalCharacter()
+        local backpack = LocalPlayer and LocalPlayer:FindFirstChild("Backpack")
+        local function matches(tool)
+            if not tool or not tool:IsA("Tool") then
+                return false
+            end
+            local hasRF = hasReloadAndFire(tool)
+            if mode == "Pistol" then
+                return hasRF
+            end
+            if mode == "Knife" then
+                return not hasRF
+            end
+            return false
+        end
+
+        if backpack then
+            for _, item in ipairs(backpack:GetChildren()) do
+                if matches(item) then
+                    return item
+                end
+            end
+        end
+
+        if character then
+            for _, item in ipairs(character:GetChildren()) do
+                if matches(item) then
+                    return item
+                end
+            end
+        end
+
+        return nil
+    end
+
+    local function equipTool(tool)
+        local character = getLocalCharacter()
+        if tool and character and tool.Parent ~= character then
+            tool.Parent = character
+        end
+    end
+
+    local function unequipTool(tool)
+        local backpack = LocalPlayer and LocalPlayer:FindFirstChild("Backpack")
+        if tool and backpack and tool.Parent ~= backpack then
+            tool.Parent = backpack
+        end
+    end
+
     local function equipWeaponByType(kind)
         local character = getLocalCharacter()
         local backpack = LocalPlayer and LocalPlayer:FindFirstChild("Backpack")
@@ -347,15 +405,52 @@ return function(ctx)
     end
 
     local function killAllInstant()
-        local targets = getAliveTargets()
-        for _, player in ipairs(targets) do
-            local character = player.Character
-            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-            if humanoid and humanoid.Health > 0 then
-                attackTarget(character)
-                task.wait(KILL_ALL_INSTANT_DELAY)
+        local character = getLocalCharacter()
+        local localRoot = character and character:FindFirstChild("HumanoidRootPart")
+        if not character or not localRoot then
+            return
+        end
+        if LocalPlayer and LocalPlayer.Neutral then
+            return
+        end
+
+        local tool = findToolByMode(killWeaponMode)
+        if not tool then
+            return
+        end
+
+        equipTool(tool)
+
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and isEnemyPlayer(player) then
+                local targetChar = player.Character
+                local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+                local humanoid = targetChar and targetChar:FindFirstChildOfClass("Humanoid")
+                if targetRoot and humanoid and humanoid.Health > 1 then
+                    local dist = (targetRoot.Position - localRoot.Position).Magnitude
+                    if dist <= KILL_ALL_MAX_DIST then
+                        if killWeaponMode == "Pistol" then
+                            local myPos = localRoot.Position
+                            local victimPos = targetRoot.Position
+                            local dir = victimPos - myPos
+                            if dir.Magnitude > 0 then
+                                local thirdPos = victimPos + dir.Unit * 50
+                                pcall(function()
+                                    ShootGunRemote:FireServer(myPos, thirdPos, targetRoot, victimPos)
+                                end)
+                            end
+                        else
+                            pcall(function()
+                                StabRemote:FireServer(targetRoot)
+                            end)
+                        end
+                        task.wait(KILL_ALL_INSTANT_DELAY)
+                    end
+                end
             end
         end
+
+        unequipTool(tool)
     end
 
     local function startLoopKillAll()
@@ -365,6 +460,9 @@ return function(ctx)
 
         loopKillConnection = RunService.Heartbeat:Connect(function()
             if not loopKillAllEnabled then
+                return
+            end
+            if LocalPlayer and LocalPlayer.Neutral then
                 return
             end
 
@@ -377,10 +475,9 @@ return function(ctx)
             for _, player in ipairs(targets) do
                 local character = player.Character
                 local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-                if humanoid and humanoid.Health > 0 then
+                if humanoid and humanoid.Health > 1 then
                     attackTarget(character)
                     lastLoopAttack = now
-                    break
                 end
             end
         end)

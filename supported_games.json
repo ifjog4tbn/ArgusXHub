@@ -1,6 +1,11 @@
 {
   "games": [
     {
+      "name": "Humanlife 3: Civilization",
+      "placeId": 133115820245903,
+      "supportLevel": 1
+    },
+    {
       "name": "FPV DRONE [WAR]",
       "placeId": 75022861227644,
       "supportLevel": 1

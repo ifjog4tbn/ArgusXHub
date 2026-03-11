@@ -1,6 +1,11 @@
 {
   "games": [
     {
+      "name": "FPV DRONE [WAR]",
+      "placeId": 75022861227644,
+      "supportLevel": 1
+    },
+    {
       "name": "Police Academy Roleplay 2",
       "placeId": 13644806894,
       "supportLevel": 1

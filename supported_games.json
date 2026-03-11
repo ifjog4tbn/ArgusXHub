@@ -1,6 +1,11 @@
 {
   "games": [
     {
+      "name": "Pirate Mayhem",
+      "placeId": 110823256031006,
+      "supportLevel": 1
+    },
+    {
       "name": "Humanlife 3: Civilization",
       "placeId": 133115820245903,
       "supportLevel": 1

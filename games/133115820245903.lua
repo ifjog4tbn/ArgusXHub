@@ -39,10 +39,6 @@ return function(ctx)
                 enabled = false,
                 color = Color3.new(0.75, 0.75, 0.75),
             },
-            Tree = {
-                enabled = false,
-                color = Color3.new(0.55, 0.27, 0.07),
-            },
         },
     }
 
@@ -151,15 +147,6 @@ return function(ctx)
                         end,
                     })
 
-                    tab:Colorpicker({
-                        Title = "Clay Color",
-                        Default = state.ores.Clay.color,
-                        Transparency = 0,
-                        Callback = function(color)
-                            state.ores.Clay.color = color
-                        end,
-                    })
-
                     tab:Toggle({
                         Title = "Coal",
                         Value = state.ores.Coal.enabled,
@@ -168,15 +155,6 @@ return function(ctx)
                             if not value then
                                 clearOreHighlights("Coal")
                             end
-                        end,
-                    })
-
-                    tab:Colorpicker({
-                        Title = "Coal Color",
-                        Default = state.ores.Coal.color,
-                        Transparency = 0,
-                        Callback = function(color)
-                            state.ores.Coal.color = color
                         end,
                     })
 
@@ -191,15 +169,6 @@ return function(ctx)
                         end,
                     })
 
-                    tab:Colorpicker({
-                        Title = "Copper Color",
-                        Default = state.ores.Copper.color,
-                        Transparency = 0,
-                        Callback = function(color)
-                            state.ores.Copper.color = color
-                        end,
-                    })
-
                     tab:Toggle({
                         Title = "Iron",
                         Value = state.ores.Iron.enabled,
@@ -208,15 +177,6 @@ return function(ctx)
                             if not value then
                                 clearOreHighlights("Iron")
                             end
-                        end,
-                    })
-
-                    tab:Colorpicker({
-                        Title = "Iron Color",
-                        Default = state.ores.Iron.color,
-                        Transparency = 0,
-                        Callback = function(color)
-                            state.ores.Iron.color = color
                         end,
                     })
 
@@ -231,15 +191,6 @@ return function(ctx)
                         end,
                     })
 
-                    tab:Colorpicker({
-                        Title = "Rock Color",
-                        Default = state.ores.Rock.color,
-                        Transparency = 0,
-                        Callback = function(color)
-                            state.ores.Rock.color = color
-                        end,
-                    })
-
                     tab:Toggle({
                         Title = "Sand",
                         Value = state.ores.Sand.enabled,
@@ -248,15 +199,6 @@ return function(ctx)
                             if not value then
                                 clearOreHighlights("Sand")
                             end
-                        end,
-                    })
-
-                    tab:Colorpicker({
-                        Title = "Sand Color",
-                        Default = state.ores.Sand.color,
-                        Transparency = 0,
-                        Callback = function(color)
-                            state.ores.Sand.color = color
                         end,
                     })
 
@@ -272,31 +214,65 @@ return function(ctx)
                     })
 
                     tab:Colorpicker({
+                        Title = "Clay Color",
+                        Default = state.ores.Clay.color,
+                        Transparency = 0,
+                        Callback = function(color)
+                            state.ores.Clay.color = color
+                        end,
+                    })
+
+                    tab:Colorpicker({
+                        Title = "Coal Color",
+                        Default = state.ores.Coal.color,
+                        Transparency = 0,
+                        Callback = function(color)
+                            state.ores.Coal.color = color
+                        end,
+                    })
+
+                    tab:Colorpicker({
+                        Title = "Copper Color",
+                        Default = state.ores.Copper.color,
+                        Transparency = 0,
+                        Callback = function(color)
+                            state.ores.Copper.color = color
+                        end,
+                    })
+
+                    tab:Colorpicker({
+                        Title = "Iron Color",
+                        Default = state.ores.Iron.color,
+                        Transparency = 0,
+                        Callback = function(color)
+                            state.ores.Iron.color = color
+                        end,
+                    })
+
+                    tab:Colorpicker({
+                        Title = "Rock Color",
+                        Default = state.ores.Rock.color,
+                        Transparency = 0,
+                        Callback = function(color)
+                            state.ores.Rock.color = color
+                        end,
+                    })
+                    
+                    tab:Colorpicker({
+                        Title = "Sand Color",
+                        Default = state.ores.Sand.color,
+                        Transparency = 0,
+                        Callback = function(color)
+                            state.ores.Sand.color = color
+                        end,
+                    })
+
+                    tab:Colorpicker({
                         Title = "Tin Color",
                         Default = state.ores.Tin.color,
                         Transparency = 0,
                         Callback = function(color)
                             state.ores.Tin.color = color
-                        end,
-                    })
-
-                    tab:Toggle({
-                        Title = "Tree",
-                        Value = state.ores.Tree.enabled,
-                        Callback = function(value)
-                            state.ores.Tree.enabled = value
-                            if not value then
-                                clearOreHighlights("Tree")
-                            end
-                        end,
-                    })
-
-                    tab:Colorpicker({
-                        Title = "Tree Color",
-                        Default = state.ores.Tree.color,
-                        Transparency = 0,
-                        Callback = function(color)
-                            state.ores.Tree.color = color
                         end,
                     })
                 end,

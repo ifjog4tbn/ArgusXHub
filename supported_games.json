@@ -1,6 +1,11 @@
 {
   "games": [
     {
+      "name": "Trespasser [HORROR]",
+      "placeId": 17352249555,
+      "supportLevel": 1
+    },
+    {
       "name": "Escape Tsunami For Brainrots!",
       "placeId": 131623223084840,
       "supportLevel": 1

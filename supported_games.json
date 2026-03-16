@@ -1,6 +1,11 @@
 {
   "games": [
     {
+      "name": "Escape Tsunami For Brainrots!",
+      "placeId": 131623223084840,
+      "supportLevel": 1
+    },
+    {
       "name": "Pirate Mayhem",
       "placeId": 110823256031006,
       "extra1": 134539741485654,

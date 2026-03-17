@@ -1,13 +1,6 @@
 return function(ctx)
     local RunService = ctx.RunService or game:GetService("RunService")
 
-    local state = {
-        mode = "In UI",
-        enabled = false,
-    }
-
-    local updateConn = nil
-    local infoGui = nil
     local fuelEnabled = false
     local fuelConn = nil
     local fuelGui = nil
@@ -20,31 +13,6 @@ return function(ctx)
     local espConn = nil
     local espActive = false
     local nameToCategory = nil
-
-    local function findDistanceLabel()
-        for _, obj in ipairs(workspace:GetChildren()) do
-            if obj:GetAttribute("Rojo_Target_PrimaryPart") ~= nil then
-                local label = obj
-                    :FindFirstChild("RequiredComponents")
-                if label then
-                    label = label:FindFirstChild("Controls")
-                end
-                if label then
-                    label = label:FindFirstChild("DistanceDial")
-                end
-                if label then
-                    label = label:FindFirstChild("SurfaceGui")
-                end
-                if label then
-                    label = label:FindFirstChild("TextLabel")
-                end
-                if label and label:IsA("TextLabel") then
-                    return label
-                end
-            end
-        end
-        return nil
-    end
 
     local function findFuelImageLabel()
         for _, obj in ipairs(workspace:GetChildren()) do
@@ -69,45 +37,6 @@ return function(ctx)
             end
         end
         return nil
-    end
-
-    local function ensureGui()
-        if infoGui and infoGui.Parent then
-            return infoGui
-        end
-
-        local ArgusInfo = Instance.new("ScreenGui")
-        local DistanceInfo = Instance.new("TextLabel")
-
-        ArgusInfo.Name = "ArgusInfo"
-        ArgusInfo.Parent = game.CoreGui
-        ArgusInfo.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-        DistanceInfo.Name = "DistanceInfo"
-        DistanceInfo.Parent = ArgusInfo
-        DistanceInfo.BackgroundColor3 = Color3.new(1, 1, 1)
-        DistanceInfo.BackgroundTransparency = 1
-        DistanceInfo.BorderColor3 = Color3.new(0, 0, 0)
-        DistanceInfo.BorderSizePixel = 0
-        DistanceInfo.Position = UDim2.new(-0.000850919052, 0, 0.935763896, 0)
-        DistanceInfo.Size = UDim2.new(0.119979583, 0, 0.0642361119, 0)
-        DistanceInfo.Font = Enum.Font.Unknown
-        DistanceInfo.Text = "5 m"
-        DistanceInfo.TextColor3 = Color3.new(0, 0.666667, 1)
-        DistanceInfo.TextScaled = true
-        DistanceInfo.TextSize = 14
-        DistanceInfo.TextStrokeColor3 = Color3.new(0, 0.666667, 1)
-        DistanceInfo.TextWrapped = true
-
-        infoGui = ArgusInfo
-        return infoGui
-    end
-
-    local function destroyGui()
-        if infoGui then
-            infoGui:Destroy()
-            infoGui = nil
-        end
     end
 
     local function ensureFuelGui()
@@ -443,86 +372,12 @@ return function(ctx)
         end
     end
 
-    local function setToggleDesc(toggle, text)
-        if toggle and toggle.SetDesc then
-            toggle:SetDesc(text)
-        end
-    end
-
-    local function startUpdates(toggle)
-        if updateConn then
-            return
-        end
-        updateConn = RunService.RenderStepped:Connect(function()
-            if not state.enabled then
-                return
-            end
-
-            local label = findDistanceLabel()
-            local text = label and label.Text or ""
-
-            if state.mode == "In UI" then
-                destroyGui()
-                setToggleDesc(toggle, text)
-            else
-                local gui = ensureGui()
-                local distanceLabel = gui and gui:FindFirstChild("DistanceInfo")
-                if distanceLabel then
-                    distanceLabel.Text = text
-                end
-                setToggleDesc(toggle, nil)
-            end
-        end)
-    end
-
-    local function stopUpdates(toggle)
-        if updateConn then
-            updateConn:Disconnect()
-            updateConn = nil
-        end
-        setToggleDesc(toggle, nil)
-        destroyGui()
-    end
-
     return {
         tabs = {
             {
                 Title = "Info",
                 Icon = "solar:speedometer-bold-duotone",
                 build = function(tab)
-                    local toggleRef = nil
-
-                    tab:Dropdown({
-                        Title = "Info Type",
-                        Values = { "In UI", "Ingame" },
-                        Value = state.mode,
-                        Multi = false,
-                        Callback = function(option)
-                            local selected = typeof(option) == "table" and option[1] or option
-                            if selected == "In UI" or selected == "Ingame" then
-                                state.mode = selected
-                                if state.enabled and toggleRef then
-                                    if selected == "In UI" then
-                                        destroyGui()
-                                    end
-                                end
-                            end
-                        end,
-                    })
-
-                    toggleRef = tab:Toggle({
-                        Title = "Train distance",
-                        Value = false,
-                        Callback = function(value)
-                            state.enabled = value
-                            if value then
-                                startUpdates(toggleRef)
-                            else
-                                stopUpdates(toggleRef)
-                            end
-                        end,
-                    })
-
                     tab:Toggle({
                         Title = "Fuel UI",
                         Value = false,
@@ -541,6 +396,7 @@ return function(ctx)
                 Title = "ESP",
                 Icon = "solar:diamond-bold-duotone",
                 build = function(tab)
+                    print("[ESP] build start")
                     espState.maxDistance = 500
                     espState.enabled = {
                         Ammo = false,
@@ -567,6 +423,7 @@ return function(ctx)
                         Weapon = Color3.fromRGB(255, 255, 0),
                     }
 
+                    print("[ESP] state initialized")
                     tab:Slider({
                         Title = "Max Distance",
                         Step = 1,
@@ -576,35 +433,44 @@ return function(ctx)
                             Default = espState.maxDistance,
                         },
                         Callback = function(value)
+                            print("[ESP] slider value", value)
                             espState.maxDistance = value
                         end,
                     })
 
                     local function addEspToggle(name)
+                        print("[ESP] add toggle", name)
                         tab:Toggle({
                             Title = name,
                             Value = false,
                             Callback = function(value)
+                                print("[ESP] toggle", name, value)
                                 espState.enabled[name] = value
                                 setEspActive()
                             end,
                         })
                         if tab.Colorpicker then
+                            print("[ESP] colorpicker (lowercase)", name)
                             tab:Colorpicker({
                                 Title = name .. " Color",
                                 Value = espState.colors[name],
                                 Callback = function(value)
+                                    print("[ESP] color", name, value)
                                     espState.colors[name] = value
                                 end,
                             })
                         elseif tab.ColorPicker then
+                            print("[ESP] colorpicker (upper)", name)
                             tab:ColorPicker({
                                 Title = name .. " Color",
                                 Value = espState.colors[name],
                                 Callback = function(value)
+                                    print("[ESP] color", name, value)
                                     espState.colors[name] = value
                                 end,
                             })
+                        else
+                            print("[ESP] no colorpicker method for", name)
                         end
                     end
 

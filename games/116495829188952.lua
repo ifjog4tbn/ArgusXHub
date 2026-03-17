@@ -569,9 +569,12 @@ return function(ctx)
 
                     tab:Slider({
                         Title = "Max Distance",
-                        Min = 15,
-                        Max = 5000,
-                        Value = espState.maxDistance,
+                        Step = 1,
+                        Value = {
+                            Min = 15,
+                            Max = 5000,
+                            Default = espState.maxDistance,
+                        },
                         Callback = function(value)
                             espState.maxDistance = value
                         end,

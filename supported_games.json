@@ -1,6 +1,11 @@
 {
   "games": [
     {
+      "name": "Dead Rails [Beta]",
+      "placeId": 116495829188952,
+      "supportLevel": 1
+    },
+    {
       "name": "Trespasser [HORROR]",
       "placeId": 17352249555,
       "extra1": "17419111999",

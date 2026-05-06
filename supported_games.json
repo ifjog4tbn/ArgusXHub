@@ -1,6 +1,11 @@
 {
   "games": [
     {
+      "name": "Subway Surf for Brainrots🚇",
+      "placeId": 78475473751685,
+      "supportLevel": 1
+    },
+    {
       "name": "Dead Rails [Beta]",
       "placeId": 116495829188952,
       "extra1": 70876832253163,

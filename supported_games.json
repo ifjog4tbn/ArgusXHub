@@ -1,6 +1,11 @@
 {
   "games": [
     {
+      "name": "3008",
+      "placeId": 2768379856,
+      "supportLevel": 1
+    },
+    {
       "name": "Swing Obby for Poppy Playtime 5!",
       "placeId": 125553580825682,
       "supportLevel": 1

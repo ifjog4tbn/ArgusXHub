@@ -1,6 +1,11 @@
 {
   "games": [
     {
+      "name": "Swing Obby for Poppy Playtime 5!",
+      "placeId": 125553580825682,
+      "supportLevel": 1
+    },
+    {
       "name": "Subway Surf for Brainrots🚇",
       "placeId": 78475473751685,
       "supportLevel": 1

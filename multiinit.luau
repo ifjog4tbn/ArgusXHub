@@ -1701,8 +1701,6 @@ for i, v in pairs(funcs2) do
  end
 end
 
-syn.protect_gui(DrawingDict)
-syn.protect_gui(ClipboardUI)
 QueueGetIdentity()
 
 getgenv().ArgusUNC_Loaded = true

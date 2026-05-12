@@ -1,13 +1,9 @@
--- #matpatz -- I have alot of bad commits so uh lmk if shit doesnt work
-
 local time = tick()
 local testing = false
 
 local cclosures = {}
 local custom_closures = {}; local debug_override = {}
 local function _newc(func)
-    --expect(func, "function", false, 1)
-
     local wrapper = function(...)
         local args = table.pack(...)
         local co = coroutine.create(function()
@@ -3569,13 +3565,9 @@ add("getactorthreads", function()
     return alive
 end)
 
--- Loader
--- dropped my mem by 200mb
-
 local adding = 0; genv["loaded"] = {}
 for name, func in pairs(functions) do
     if typeof(name) ~= "string" then
-        warn("skipping bad entry: " .. tostring(name))
         continue
     end
 
@@ -3586,49 +3578,14 @@ for name, func in pairs(functions) do
     adding += 1
     table.insert(genv["loaded"], {name = name, func = func})
 
-    print("Adding:", name, tostring(func) .. "\t #" .. adding)
     getgenv()[name] = func
 end
 
-print(string.format(
-    "Completed the implementation of #%d functions within %.2f seconds\n%s",
-    adding,
-    tick() - time,
-    string.rep("\t", 4) .. "Join my discord server (https://discord.gg/bSPRYhBGtf) or dm 'matpatz' on discord for any inquiries or suggestions"
-))
-
-local docs = {
-    "\n\t► https://potassium.pro",
-    "https://volt.bz",
-    "https://sunc.su",
-    "https://celeryrblx.github.io/lua/rnet -- unused",
-    "https://tesker-103.github.io/UNC-Documentation -- unused"
-}
-local codeused = {
-    "\n\t► https://scriptblox.com/u/imjustanaIienguy (github.com/lunar0x4) -- hookmetamethod, hookfunction, filtergc, and other stuff",
-    "https://scriptblox.com/script/Universal-Script-UNC-RENC-Functions-For-Nova-17623 -- used to find functions for implemenation",
-    "https://v3rm.net/threads/release-raknet-implementation.15622 -- completely made up docs",
-    "https://github.com/daily3014/rbx-cryptography",
-    "https://github.com/luau/UniversalSynSaveInstance"
-}
-
-print(string.format(
-    "Documentation used:%s\nCode used: %s",
-    table.concat(docs, "\n\t► "),
-    
-    table.concat(codeused, "\n\t► ")
-))
-
--- 50/50 -- also removes more stuff than we added with tables -- who cares
 genv.unload = function(sp)
     for i, item in ipairs(genv["loaded"]) do
         if item.name then
             getgenv()[item.name] = nil
             adding -= 1
-
-            if sp then
-                print("Removing:", item.name, tostring(item.func) .. "\t #" .. adding)
-            end
         end
     end
 

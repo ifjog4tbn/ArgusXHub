@@ -1699,6 +1699,4 @@ for i, v in next, funcs do
     end
 end
 
-QueueGetIdentity()
-
 getgenv().ArgusUNC_Loaded = true

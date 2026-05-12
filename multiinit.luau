@@ -3591,3 +3591,5 @@ genv.unload = function(sp)
 
     table.clear(genv["loaded"])
 end
+
+getgenv().ArgusUNC_Loaded = true

@@ -1,5 +1,3 @@
-if getgenv and getgenv().ArgusPreLoad then return end
-
 -- Definitions
 local table = table.clone(table) -- Prevent modifications from other scripts
 local debug = table.clone(debug) -- ^^^^
@@ -1695,13 +1693,12 @@ table.sort(funcs2, function(a, b)
  return string.byte(a:lower())<string.byte(b:lower())
 end)
 
-for i, v in pairs(funcs2) do
- if not getgenv()[i] then
-  Total = Total + 1
- end
+for i, v in next, funcs do
+    if getgenv()[i] == nil then
+        getgenv()[i] = v
+    end
 end
 
 QueueGetIdentity()
 
 getgenv().ArgusUNC_Loaded = true
-getgenv().ArgusPreLoad = true

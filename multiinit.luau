@@ -32,10 +32,13 @@ local newcclosure = newcclosure and newcclosure or _newc
 
 local functions = {}; local check2add = 0
 local function add(name, func, expect)
-    check2add += 1
-    -- print("Checking :", name, tostring(func) .. "\t".. c)
+    if functions[name] ~= nil then 
+        return 
+    end
 
-    if typeof(func) ~= "function" and true then
+    check2add += 1
+    
+    if typeof(func) ~= "function" then
         functions[name] = func
     else
         functions[name] = newcclosure(func)
@@ -122,16 +125,6 @@ local services = {
     Players = get(game:GetService("Players"))
 }
 local lp = services["Players"]["LocalPlayer"]
-
---[[
-for _, item in ipairs(tests) do
-    table.insert(services, get(game:GetService(item)))
-end --]]
-  
--- termexec (terminal)
-
--- probbaly wont work so you have to manually download it
--- read the features section on the scriptblox post to learn how to set up a websocket
 
 local isrunning = false
 local ps, cmd
@@ -2618,25 +2611,6 @@ end)
 add("makewriteable", function(object)
     expect(object, "table", false, 1)
     return guard(object, false)
-end)
-
--- Misc
-
--- Custom : a new param to include or disclude the executor version
--- no more stupid variable shit
-
--- or maybe it should be something like this
-    -- local name, version = idenifyexecutor()
-    -- print(name, version)
-    -- perhaps both
-
-add("identifyexecutor", function(include_version)
-    local ver = include_version and " v2.1.1" or ""
-    return `Potassium{ver}`
-end)
-
-add("identifyversion", function(include_version)
-    return select(2, identifyexecutor())
 end)
 
 local shwid

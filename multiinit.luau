@@ -2996,11 +2996,6 @@ add("decompile", function(item)
     }).Body
 end)
 
-add("getscripthash", function(item)
-    expect(item, "Instance", false, 1)
-    return crypt.hash(getscriptbytecode(item))
-end)
-
 -- hash a functions BYTECODE and string.dump doesnt exist so
 add("getfunctionhash", function(item)
     expect(item, "function", false, 1)

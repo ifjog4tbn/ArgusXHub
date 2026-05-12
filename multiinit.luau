@@ -1,3564 +1,1709 @@
-local time = tick()
-local testing = false
+if getgenv and getgenv().ArgusPreLoad then return end
 
-local cclosures = {}
-local custom_closures = {}; local debug_override = {}
-local function _newc(func)
-    local wrapper = function(...)
-        local args = table.pack(...)
-        local co = coroutine.create(function()
-            return func(table.unpack(args, 1, args.n))
-        end)
+-- Definitions
+local table = table.clone(table) -- Prevent modifications from other scripts
+local debug = table.clone(debug) -- ^^^^
+local bit32 = table.clone(bit32)
+local bit = bit32
+local os = table.clone(os)
+local math = table.clone(math)
+local utf8 = table.clone(utf8)
+local string = table.clone(string)
+local task = table.clone(task)
 
-        local ok, res = coroutine.resume(co)
-        if not ok then
-            error(res, 2)
-        end
+local game = game -- game is game
+local oldGame = game
 
-        return res
-    end
+local Version = '1.1.6'
 
-    cclosures[wrapper] = true
-    custom_closures[func] = true
+local isDragging = false -- rconsole
+local dragStartPos = nil -- rconsole
+local frameStartPos = nil -- rconsole
 
-    debug_override[wrapper] = {
-        source = "[C]",
-        short_src = "[C]",
-    }
-
-    return wrapper
+local Data = game:GetService("TeleportService"):GetLocalPlayerTeleportData()
+local TeleportData
+if Data and Data.MOREUNCSCRIPTQUEUE then
+ TeleportData = Data.MOREUNCSCRIPTQUEUE
 end
-local newcclosure = newcclosure and newcclosure or _newc
-
-local functions = {}; local check2add = 0
-local function add(name, func, expect)
-    if functions[name] ~= nil then 
-        return 
-    end
-
-    check2add += 1
-    
-    if typeof(func) ~= "function" then
-        functions[name] = func
-    else
-        functions[name] = newcclosure(func)
-    end
-end
-local genv = getgenv()
-local function alias(names, func)
-    local _func = genv[func] or functions[func] or func 
-    for k,v in ipairs(names) do
-        add(v, _func)
-    end
+if TeleportData then
+ local func = loadstring(TeleportData)
+ local s, e = pcall(func)
+ if not s then task.spawn(error, e) end
 end
 
-local function index(tofind) -- i dont think i use this idk
-    for _, item in ipairs(genv) do -- i like could cache it but who cares
-        if item == tofind then
-            return item
-        end
-    end
-    return nil
-end
 
--- translate a type string into a dummy value of that type
--- so expect can use typeof() from it
-local function translate(t)
-    if t == "string"   then return "" end
-    if t == "number"   then return 0 end
-    if t == "boolean"  then return false end
-    if t == "function" then return function() end end
-    if t == "table"    then return {} end
-    if t == "Instance" then return Instance.new("Folder") end
-    if t == "thread"   then return coroutine.create(function() end) end
-    -- userdata / RBXScriptSignal js let be
-    return t
-end
-
-local function expect(got, expected, care_about_value, arg_num, message)
-    if type(expected) == "string" then
-        expected = translate(expected)
-    end
-
-    local expt = typeof(expected)
-
-    arg_num = arg_num or 1
-    if not message then
-        message = "expected " .. expt .. " at #" .. arg_num .. " got " .. typeof(got)
-    end
-
-    if not care_about_value then
-        assert(typeof(got) == expt, message)
-    else
-        message = "expected " .. tostring(expected) .. " at #" .. arg_num .. " got " .. typeof(got)
-        assert(typeof(got) == expected, message)
-    end
-end
-
-local function _cloneref(object)
-    if setmetatable then
-        local proxy = {}
-        local mt = {
-            __index = object,
-            __newindex = function(_, k, v) object[k] = v end,
-            __tostring = function() return tostring(object) end,
-            __eq = function() return false end
-        }
-        return setmetatable(proxy, mt)
-    else
-        return object
-    end
-end
-local get = cloneref and cloneref or _cloneref
-local services = {
-    CollectionService = get(game:GetService("CollectionService")),
-    VirtualInputManager = get(game:GetService("VirtualInputManager")),
-    UserInputService = get(game:GetService("UserInputService")),
-    UGCValidationService = get(game:GetService("UGCValidationService")),
-    RbxAnalyticsService = get(game:GetService("RbxAnalyticsService")),
-    ReflectionService = get(game:GetService("ReflectionService")),
-    CoreGui = gethui and gethui() or get(game:GetService("CoreGui")),
-    ReplicatedStorage = get(game:GetService("ReplicatedStorage")),
-    Stats = get(game:GetService("Stats")),
-    CorePackages = get(game:GetService("CorePackages")),
-    RunService = get(game:GetService("RunService")),
-    Players = get(game:GetService("Players"))
-}
-local lp = services["Players"]["LocalPlayer"]
-
-local isrunning = false
-local ps, cmd
-add("setup", function()
-    isrunning = true
-
-    -- will timeout unless you run em
-    ps = WebSocket.connect("ws://localhost:8080")
-    cmd = WebSocket.connect("ws://localhost:8081")
-
-    ps.OnMessage:Connect(function(msg)
-        print("[PS]", msg)
-    end)
-    cmd.OnMessage:Connect(function(msg)
-        print("[CMD]", msg)
-    end)
-end)
-
-local function allow()
-    return isrunning
-end
-
-add("powerexec", function(command)
-    if not allow() then return end
-    ps:Send(command) -- Get-Date
-end)
-add("termexec", function(command)
-    powerexec(command)
-end)
-add("cpexec", function(command)
-    if not allow() then return end
-    cmd:Send(command) -- date /t
-end)
-
-add("getenv", function(var)
-    if not allow() then return nil end
-
-    local result, done = nil, false
-
-    local conn
-    conn = ps.OnMessage:Connect(function(msg)
-        conn:Disconnect()
-        result = msg:gsub("%s+$", "") 
-        done = true
-    end)
-
-    ps:Send(string.format("[System.Environment]::GetEnvironmentVariable('%s')", var))
-
-    repeat task.wait() until done
-    return result
-end)
-
-add("downloadLune", function(command)
-    local steps = {
-        "irm https://github.com/rojo-rbx/rokit/releases/latest/download/rokit-windows.exe -OutFile rokit.exe",
-        ".\\rokit.exe self-install",
-        "rokit add --global lune-org/lune",
-        "lune --version"
-    }
-
-    local i = 1
-    ps.OnMessage:Connect(function(msg)
-        print("[PS]", msg)
-        i += 1
-        if steps[i] then
-            ps:Send(steps[i])
-        end
-    end)
-
-    ps:Send(steps[1])
-end)
-
--- you could also just run : lune --version
-add("islune", function()
-    if not allow() then return false end
-
-    local result, done = false, false
-
-    local conn
-    conn = ps.OnMessage:Connect(function(msg)
-        conn:Disconnect()
-        result = msg ~= nil and msg:gsub("%s", "") ~= ""
-        done = true
-    end)
-
-    ps:Send("Get-Command lune -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source")
-
-    repeat task.wait() until done
-
-    return result
-end)
-
-local r = loadstring(game:HttpGet("https://github.com/daily3014/rbx-cryptography/raw/main/src/Utilities/RandomString.luau"))()
-local rstring = function(len)
-    len = len or 16
-    return r(len, false)
-end
-
-add("lune", function(code)
-    local filename = rstring(6)
-    ps:Send(string.format( -- writefile
-        "Set-Content -Path '%s.luau' -Value '%s'",
-        filename,
-        code:gsub("'", "''")
-    ))
-
-    task.delay(0.5, function()
-        ps:Send(string.format("lune run %s.luau", filename))
-    end)
-end)
-  
--- Cache
-
-local stored = {}
-add("cache.invalidate", function(object)
-    expect(object, "Instance", false, 1)
-    stored[object] = nil
-end)
-
-add("cache.iscached", function(object)
-    expect(object, "Instance", false, 1)
-    return stored[object] ~= nil
-end)
-
-add("cache.replace", function(object, new)
-    expect(object, "Instance", false, 1)
-    expect(new, "Instance", false, 2)
-    stored[object] = new
-end)
-
-local function t(item)
-    return typeof(item) ~= "Instance"
-end
-
--- the alien boi
-add("cloneref", function(object)
-    expect(object, "Instance", false, 1)
-
-    return _cloneref(objecr)
-end)
-
-add("compareinstances", function(a, b)
-    expect(a, "Instance", false, 1)
-    expect(b, "Instance", false, 2)
-    return a == b
-end)
-
--- Closures
-
-add("checkcaller", function()
-    local info = debug.info(getgenv, 'slnaf')
-    return debug.info(1, 'slnaf') ~= info
-end)
-
-add("clonefunction", function(func)
-    expect(func, "function", false, 1)
-    return function(...)
-        return func(...)
-    end
-end)
-
-add("getcallingscript", function()
-    local s = debug.info(1, 's')
-    return table.find(game:GetDescendants(), s)
-end)
-
-local tback_ignore = {}
-add("setstackhidden", function(func, hidden)
-    tback_ignore[func] = hidden
-end)
-
-local ishooked, canhook = {}, {}
-for k,v in pairs(genv) do
-    if typeof(v) == "function" then
-        ishooked[v] = true
-    end
-end
-
-add("isfunctionhooked", function(func)
-    expect(func, "function", false, 1)
-    return ishooked[func] ~= nil and ishooked[func] ~= false
-end)
-
--- thanks https://scriptblox.com/u/imjustanaIienguy
-add("hookfunction", function(func, hook)
-    expect(func, "function", false, 1)
-    expect(hook, "function", false, 2)
-    
-    if replaceclosure then
-        return replaceclosure(func, hook)
-    end
-    local old = func
-    local hooked = function(...)
-        return hook(old, ...)
-    end
-
-    ishooked[func] = true
-    return hooked, old
-end)
-
-add("hiddenhook", function(func, hook)
-    hookfunction(func, hook)
-    ishooked[func] = false
-end)
-
-alias({"secrethook"}, function(func, hook)
-    hiddenhook(func, hook)
-end)
-
-add("restorefunction", function(func, hook)
-    expect(func, "function", false, 1)
-    ishooked[func] = nil
-    return hook
-end)
-alias({"getoriginalfunction"}, function(func, hook)
-	restorefunction(func, hook)
-end)
-
-add("securefunction", function(func)
-    expect(func, "function", false, 1)
-    
-    canhook[func] = true
-end)
-
-getgenv().unhooked = {}; local tables = {getgenv, getrenv}
-for _, env in ipairs(tables) do
-  for _, item in ipairs(env()) do
-      if typeof(item) ~= "function" then continue end
-      getgenv()["unhooked"][item] = securefunction(item)
-  end
-end
-              
-add("iscclosure", function(func)
-    if type(func) ~= "function" then
-        return false
-    end
-    return debug.info(func, "s") == "[C]"
-end)
-
-add("newlclosure", function(func) -- maybe setinfo LMAO
-    local newfunc = function()
-        func()
-    end
-    return newfunc
-end)
-
-add("islclosure", function(func)
-    if type(func) ~= "function" then
-        return false
-    end
-    return debug.info(func, "s") ~= "[C]"
-end)
-
-add("isexecutorclosure", function(func)
-    expect(func, "function", false, 1)
-
-    for _,v in pairs(getgenv()) do
-        if v == func then
-            return true
-        end
-    end
-
-    return false
-end)
-add("checkclosure", function(func)
-    return isexecutorclosure(func)
-end)
-add("isourclosure", function(func)
-    return isexecutorclosure(func)
-end)
--- isexecutorthread idk
-
-add("newcclosure", function(func) -- TODO : fix - for half decent iscclosure it will return false
-    expect(func, "function", false, 1)
-
-    return _newc(func)
-end)
-
-add("isnewcclosure", function(func)
-    return custom_closures[func]
-end)
-
--- Rconsole
-
-local _rsconsole = Instance.new("ScreenGui")
-_rsconsole.Name = rstring(6)
-_rsconsole.Parent = services["CoreGui"]
-
-local _isrconsole = false
-local function crconsole()
-    _isrconsole = not _isrconsole
-
-    local offset = 40
-
-    window = Instance.new("Frame")
-    window.Name = "window"
-    window.Size = UDim2.fromOffset(399, 251)
-    window.Position = UDim2.new(0.5, -174, 0.5, -75)
-    window.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    window.Visible = _isrconsole
-    window.Draggable = true
-    window.BorderSizePixel = 0
-    window.ClipsDescendants = true
-    window.Parent = _rsconsole
-
-    Instance.new("UICorner", window).CornerRadius = UDim.new(0, 8)
-
-    local title = Instance.new("TextLabel")
-    title.Name = "title"
-    title.Size = UDim2.fromOffset(260, 18)
-    title.Position = UDim2.fromOffset(14, 10)
-    title.BackgroundTransparency = 1
-    title.Text = "Console"
-    title.Font = Enum.Font.SourceSans
-    title.TextSize = 16
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = window
-
-    local close = Instance.new("TextButton")
-    close.Size = UDim2.fromOffset(20, 20)
-    close.Position = UDim2.fromOffset(350, 8)
-    close.Text = "X"
-    close.Parent = window
-
-    close.MouseButton1Click:Connect(function()
-        _rsconsole:Destroy()
-        _isrconsole = false
-    end)
-
-    local function createLabel(text, color)
-        local label = Instance.new("TextLabel")
-        label.Size = UDim2.fromOffset(360, 20)
-        label.Position = UDim2.fromOffset(10, offset)
-        label.BackgroundTransparency = 1
-        label.Text = text
-        label.Font = Enum.Font.Code
-        label.TextSize = 14
-        label.TextColor3 = color or Color3.fromRGB(255,255,255)
-        label.TextXAlignment = Enum.TextXAlignment.Left
-        label.Parent = window
-        label:SetAttribute("killme", true)
-
-        offset += 22 -- offset, spacing
-    end
-
-    input = function(text, color)
-        if not window then return end
-        createLabel(text, color)
-    end
-
-    input("Rconsole loaded", Color3.fromRGB(0,255,0))
-end
-
-local window
-local function shouldcreate()
-    if _isrconsole then
-        window = nil
-        do end
-    else
-        window = _rsconsole["window"]
-        crconsole()
-    end
-end
-
-add("rconsoleclear", function()
-    for _, item in ipairs(window) do
-        if item:GetAttribute("killme") then
-            item:Destroy()
-        end
-    end
-end)
-add("rconsolecontent", function()
-    repeat task.wait() until helper.GetChildrenWithAttribute
-
-    local output = {}
-    for _, v in ipairs(helper.GetChildrenWithAttribute(window, "killme")) do
-        table.insert(output, v.Text)
-    end
-    return output
-end)
-add("rconsolecreate", function()
-    crconsole()
-end)
-add("rconsoledestroy", function()
-    window:Destroy()
-end)
-add("rconsolehide", function()
-    window.Visible = false
-end)
-add("rconsoleshow", function()
-    window.Visible = true
-end)
-add("rconsoleinput", function(text)
-    expect(text, "string", false, 1)
-    input(text)
-end)
-add("rconsoleinfo", function(text)
-    rconsoleinput(text)
-end)
-add("rconsoleprint", function(text)
-    rconsoleinput(text)
-end)
-add("rconsolewarn", function(text)
-    expect(text, "string", false, 1)
-    input(text, Color3.fromRGB(255, 0, 0))
-end)
-add("rconsoleerror", function(text)
-    expect(text, "string", false, 1)
-    input(text, Color3.fromRGB(255, 255, 0))
-end)
-add("rconsolesettitle", function(title)
-    expect(title, "string", false, 1)
-    window["title"].Text = title
-end)
-
-alias({"rconsolename"}, function(title)
-    rconsolesettitle(title)
-end)
-add("isrconsole", function(title)
-    return _isrconsole
-end)
-add("rconsolehidden", function()
-    return isrconsole()
-end)
-add("rconsoleclear", function()
-    repeat task.wait() until helper.GetChildrenWithAttribute
-
-    for _, v in ipairs(_helper.GetChildrenWithAttribute(window, "killme")) do
-        v:Destroy()
-    end
-end)
-
--- importante
--- no longer do i use this
-    -- it isnt persay impossible to implement loadstring but i just dont rlly want to soooo you get a bad version
-    -- anyway thanks to this guy https://scriptblox.com/script/Universal-Script-luau-VM-execution-77330
-
-add("loadstring", function(source, chunkname)
-    if not allow() then
-        return (load)(source, chunkname) -- load is highkey nil
-    end
-
-    if not islune() then
-        downloadLune()
-    end
-
-    local filename = rstring(6)
-    local filepath = getenv("TEMP") .. "\\__ls_" .. filename .. ".luau"
-    
-    local result, done = nil, false
-
-    ps:Send(string.format(
-        "Set-Content -Path '%s' -Value '%s'",
-        filepath,
-        source:gsub("'", "''")
-    ))
-
-    local conn
-    conn = ps.OnMessage:Connect(function(msg)
-        conn:Disconnect()
-        result = msg
-        done = true
-    end)
-
-    ps:Send(string.format("lune run '%s'", filepath))
-
-    -- remove the item
-    return function()
-        repeat task.wait() until done
-        ps:Send(string.format("Remove-Item '%s' -Force", filepath))
-        return result
-    end
-end)
-                
--- Crypt
-
-local b = bit32
-local band, bxor, rshift, lshift, rrotate = b.band, b.bxor, b.rshift, b.lshift, b.rrotate
-
-local function buf(s) return buffer.fromstring(s) end
-local function str(b) return buffer.tostring(b) end
-                
-local _crypt = {}
-
-local b64 = loadstring(game:HttpGet("https://github.com/daily3014/rbx-cryptography/raw/main/src/Utilities/Base64.luau"))()
-_crypt.base64encode = function(data) -- could use the encoding service i suppose
-    expect(data, "string", false, 1)
-
-   return buffer.tostring(b64.Encode(buffer.fromstring(tostring(data))))
-end
-
-_crypt.base64decode = function(data)
-    expect(data, "string", false, 1)
-
-    return buffer.tostring(b64.Decode(buffer.fromstring(tostring(data))))
-end
-local b64 = function(str: string): string
-    return _crypt.base64encode(str) or ""
-end
-local de64 = function(str: string): string
-    return _crypt.base64decode(str) or ""
-end
-
-local rng = Random.new()
-
-local CSPRNG = loadstring(game:HttpGet("https://website-iota-ivory-12.vercel.app/code/scripts/unc/sunc/extra/csprng/init.luau"))()
-_crypt.generatebytes = function(size)
-    CSPRNG.RandomBytes(size)
-end
-_crypt.random = function(len)
-    return de64(crypt.generatebytes(len))
-end
-
-_crypt.generatekey = function()
-    local raw
-                  
-    local t = table.create(32, "")
-    for i = 1, 32 do
-        t[i] = string.char(rng:NextInteger(0,255))
-    end
-    raw = table.concat(t)
-
-    if b64 then
-        return b64(raw)
-    end
-
-    return raw
-end
-
-local AES = loadstring(game:HttpGet("https://github.com/daily3014/rbx-cryptography/raw/main/src/Encryption/AES.luau"))()
-_crypt.encrypt = function(data, key, iv)
-    assert(type(data) == "string", "data must be string")
-
-    local keyBuf = buf(b64(key))
-    local ivRaw = iv or _crypt.generatebytes(12)
-    local ivBuf = buf(b64(ivRaw))
-
-    local cipher, tag = AES.Encrypt(buf(data), keyBuf, ivBuf)
-
-    cipher = str(cipher)
-    tag = str(tag)
-
-    if crypt.base64encode then
-        cipher = crypt.base64encode(cipher)
-        tag = crypt.base64encode(tag)
-        ivRaw = crypt.base64encode(ivRaw)
-    end
-
-    return cipher, ivRaw, tag
-end
-
-_crypt.decrypt = function(ciphertext, key, iv, tag)
-    assert(type(ciphertext) == "string", "ciphertext must be string")
-    assert(type(key) == "string", "key must be string")
-    assert(type(iv) == "string", "iv must be string")
-    assert(type(tag) == "string", "tag must be string")
-
-    local keyBuf = buf(b64(key))
-    local ivBuf = buf(b64(iv))
-    local tagBuf = buf(b64(tag))
-
-    local ok, plain = AES.Decrypt(buf(b64(ciphertext)), keyBuf, ivBuf, tagBuf)
-
-    if not ok then
-        return false, nil
-    end
-
-    return true, str(plain)
-end
-
-local hash = loadstring(game:HttpGet("https://github.com/Egor-Skriptunoff/pure_lua_SHA/raw/master/sha2.lua"))()
-_crypt.hash = function(str, algorithm)
-    expect(str, "string", false, 1)
-    algorithm = (algorithm or "sha256"):lower()
-
-    hash[algorithm](str)
-end
-                
-_crypt.rnum = function(len)
-    len = len or 12
-    return CSPRNG.RandomNum(len/2, len)
-end
-
-local xor = loadstring(game:HttpGet("https://raw.githubusercontent.com/daily3014/rbx-cryptography/refs/heads/main/src/Encryption/XOR.luau"))()
-_crypt.salt = function(n: string): string
-    local b = buf(n)
-    local c = xor(b, str(_crypt.rnum(12)))
-    local n = xor(c, str(_crypt.rnum(12))) -- wrong key = wrong encryption = different characters = salt
-    return str(n)
-end
-
-_crypt.xor = function(data: string): string
-    return str(xor(buf(data)))
-end
-
-_crypt.rstring = function(len)
-    rstring(len)
-end
-
-_crypt.tobytecode = function(src)
-    expect(src, "string", false, 1)
-
-    local out = table.create(#src)
-
-    for i = 1, #src do
-        out[i] = string.char(src:byte(i))
-    end
-
-    return table.concat(out)
-end
-
-_crypt.tobinary = function(str)
-    expect(str, "string", false, 1)
-    local result = {}
-    for i = 1, #str do
-        local byte = str:byte(i)
-        local binary = ""
-        for j = 7, 0, -1 do
-            binary = binary .. (band(rshift(byte, j), 1))
-        end
-        result[i] = binary
-    end
-    return table.concat(result, " ")
-end
-
-_crypt.frombinary = function(binary)
-    expect(binary, "string", false, 1)
-    binary = binary:gsub("%s", "")
-    local result = {}
-    for i = 1, #binary, 8 do
-        local byte = binary:sub(i, i + 7)
-        if #byte == 8 then
-            result[#result + 1] = string.char(tonumber(byte, 2))
-        end
-    end
-    return table.concat(result)
-end
-
-_crypt.tohex = function(str)
-    expect(str, "string", false, 1)
-    return (str:gsub(".", function(c)
-        return string.format("%02x", string.byte(c))
-    end))
-end
-
-_crypt.fromhex = function(str)
-    expect(str, "string", false, 1)
-    assert(#str % 2 == 0, "hex string must have even length")
-    return (str:gsub("%x%x", function(c)
-        return string.char(tonumber(c, 16))
-    end))
-end
-
--- inaccurate idk vruh
-_crypt.hmac = function(key, data, algorithm)
-    expect(key, "string", false, 1)
-    expect(data, "string", false, 2)
-    expect(algorithm, "string", false, 3)
-
-    local hash = crypt.hash
-    local fromhex = crypt.fromhex
-    local tobase64 = crypt.base64encode
-
-    local function hashraw(str)
-        return fromhex(hash(str, algorithm))
-    end
-
-    local blockSize = 64
-    if #key > blockSize then
-        key = hashraw(key)
-    end
-
-    -- pad key to blockSize
-    if #key < blockSize then
-        key = key .. string.rep("\0", blockSize - #key)
-    end
-
-    local ipad, opad = {}, {}
-    for i = 1, blockSize do
-        local b = key:byte(i) or 0
-        ipad[i] = string.char(bxor(b, 0x36))
-        opad[i] = string.char(bxor(b, 0x5C))
-    end
-
-    local inner = hashraw(table.concat(ipad) .. data)
-    local outer = hashraw(table.concat(opad) .. inner)
-
-    return tobase64(outer)
-end
-
-_crypt.lz4 = function(data, step)
-    assert(type(data) == "string", "data must be string")
-
-    local out
-    if step == true then -- encrypt
-        out = lz4compress(data)
-    else
-        out = lz4decompress(data)
-    end
-    return out
-end
-
-_crypt.rle = function(data, step)
-    assert(type(data) == "string", "data must be string")
-
-    local out
-    if step == true then -- encrypt
-        out = rlecompress(data)
-    else
-        out = rledecompress(data)
-    end
-    return out
-end
-
-local crypt = _crypt
-for k, v in pairs(crypt) do
-    add("crypt." .. k, v)
-end
-
-local existing_crypt = crypt
-for k, v in pairs(crypt) do
-    if not existing_crypt[k] then
-        existing_crypt[k] = v
-    end
-end
-
-local new_crypt = {}
-for k, v in pairs(getgenv().crypt or {}) do
-    new_crypt[k] = v
-end
-
-for k, v in pairs(_crypt) do
-    if new_crypt[k] == nil then
-        new_crypt[k] = v
-    end
-end
-getgenv().crypt = new_crypt
-
--- Oth
-
-local _oth = {}
-
-local hooks = {}
-local hook_threads, og_threads = setmetatable({}, {__mode = "k"}), setmetatable({}, {__mode = "k"})
-
-_oth.hook = function(target, hookfn)
-    expect(target, "function", false, 1)
-    expect(hookfn, "function", false, 2)
-
-    hooks[target] = hooks[target] or {}
-
-    local original = target
-
-    local callback = function(...)
-        return original(...)
-    end
-
-    local function wrapper(...)
-        local caller = coroutine.running()
-
-        local co = coroutine.create(function(...)
-            local current = coroutine.running()
-            hook_threads[current] = true
-            og_threads[current] = caller
-
-            return hookfn(...)
-        end)
-
-        local ok, result = coroutine.resume(co, ...)
-        if not ok then
-            error(result)
-        end
-
-        return result
-    end
-
-    table.insert(hooks[target], {
-        hook = hookfn,
-        wrapper = wrapper,
-        callback = callback
-    })
-
-    return callback
-end
-
-_oth.unhook = function(target, hook_or_callback)
-    local list = hooks[target]
-    if not list then
-        return false
-    end
-
-    for i,v in ipairs(list) do
-        if v.hook == hook_or_callback or v.callback == hook_or_callback or hook_or_callback == nil then
-            table.remove(list, i)
-
-            if #list == 0 then
-                hooks[target] = nil
+print = print
+warn = warn
+error = error
+pcall = pcall
+printidentity = printidentity
+ipairs = ipairs
+pairs = pairs
+tostring = tostring
+tonumber = tonumber
+setmetatable = setmetatable
+rawget = rawget
+rawset = rawset
+getmetatable = getmetatable
+type = type
+version = version
+
+-- Services / Instances
+local HttpService = game:GetService('HttpService');
+local Log = game:GetService('LogService');
+
+-- Load proprerties (CREDITS TO DEUCES ON DISCORD)
+local API_Dump_Url = "https://raw.githubusercontent.com/MaximumADHD/Roblox-Client-Tracker/roblox/Mini-API-Dump.json"
+local API_Dump = game:HttpGet(API_Dump_Url)
+local Hidden = {}
+
+for _, API_Class in pairs(HttpService:JSONDecode(API_Dump).Classes) do
+    for _, Member in pairs(API_Class.Members) do
+        if Member.MemberType == "Property" then
+            local PropertyName = Member.Name
+
+            local MemberTags = Member.Tags
+
+            local Special
+
+            if MemberTags then
+                Special = table.find(MemberTags, "NotScriptable")
             end
+            if Special then
+                table.insert(Hidden, PropertyName)
+            end
+        end
+    end
+end
 
-            return true
+local vim = Instance.new("VirtualInputManager");
+
+local DrawingDict = Instance.new("ScreenGui") -- For drawing.new
+
+local ClipboardUI = Instance.new("ScreenGui") -- For setclipboard
+
+local hui = Instance.new("Folder") -- For gethui
+hui.Name = '\0'
+
+local ClipboardBox = Instance.new('TextBox', ClipboardUI) -- For setclipboard
+ClipboardBox.Position = UDim2.new(100, 0, 100, 0) -- VERY off screen
+
+-- All the following are for rconsole
+local Console = Instance.new("ScreenGui")
+local ConsoleFrame = Instance.new("Frame")
+local Topbar = Instance.new("Frame")
+local _CORNER = Instance.new("UICorner")
+local ConsoleCorner = Instance.new("UICorner")
+local CornerHide = Instance.new("Frame")
+local DontModify = Instance.new("Frame")
+local UICorner = Instance.new("UICorner")
+local CornerHide2 = Instance.new("Frame")
+local Title = Instance.new("TextLabel")
+local UIPadding = Instance.new("UIPadding")
+local ConsoleIcon = Instance.new("ImageLabel")
+local Holder = Instance.new("ScrollingFrame")
+local MessageTemplate = Instance.new("TextLabel")
+local InputTemplate = Instance.new("TextBox")
+local UIListLayout = Instance.new("UIListLayout")
+local HolderPadding = Instance.new("UIPadding")
+
+Console.Name = "Console"
+Console.Parent = nil
+Console.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+ConsoleFrame.Name = "ConsoleFrame"
+ConsoleFrame.Parent = Console
+ConsoleFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+ConsoleFrame.BorderColor3 = Color3.fromRGB(0, 0, 0)
+ConsoleFrame.BorderSizePixel = 0
+ConsoleFrame.Position = UDim2.new(0.0963890627, 0, 0.220791712, 0)
+ConsoleFrame.Size = UDim2.new(0, 888, 0, 577)
+
+Topbar.Name = "Topbar"
+Topbar.Parent = ConsoleFrame
+Topbar.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Topbar.BorderColor3 = Color3.fromRGB(0, 0, 0)
+Topbar.BorderSizePixel = 0
+Topbar.Position = UDim2.new(0, 0, -0.000463640812, 0)
+Topbar.Size = UDim2.new(1, 0, 0, 32)
+
+_CORNER.Name = "_CORNER"
+_CORNER.Parent = Topbar
+
+ConsoleCorner.Name = "ConsoleCorner"
+ConsoleCorner.Parent = ConsoleFrame
+
+CornerHide.Name = "CornerHide"
+CornerHide.Parent = ConsoleFrame
+CornerHide.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+CornerHide.BorderColor3 = Color3.fromRGB(0, 0, 0)
+CornerHide.BorderSizePixel = 0
+CornerHide.Position = UDim2.new(0, 0, 0.0280000009, 0)
+CornerHide.Size = UDim2.new(1, 0, 0, 12)
+
+DontModify.Name = "DontModify"
+DontModify.Parent = ConsoleFrame
+DontModify.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+DontModify.BorderColor3 = Color3.fromRGB(0, 0, 0)
+DontModify.BorderSizePixel = 0
+DontModify.Position = UDim2.new(0.98169291, 0, 0.0278581586, 0)
+DontModify.Size = UDim2.new(-0.00675675692, 21, 0.972141862, 0)
+
+UICorner.Parent = DontModify
+
+CornerHide2.Name = "CornerHide2"
+CornerHide2.Parent = ConsoleFrame
+CornerHide2.AnchorPoint = Vector2.new(1, 0)
+CornerHide2.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+CornerHide2.BorderColor3 = Color3.fromRGB(0, 0, 0)
+CornerHide2.BorderSizePixel = 0
+CornerHide2.Position = UDim2.new(1, 0, 0.0450000018, 0)
+CornerHide2.Size = UDim2.new(0, 9, 0.955023408, 0)
+
+Title.Name = "Title"
+Title.Parent = ConsoleFrame
+Title.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+Title.BackgroundTransparency = 1.000
+Title.BorderColor3 = Color3.fromRGB(0, 0, 0)
+Title.BorderSizePixel = 0
+Title.Position = UDim2.new(0.0440017432, 0, 0, 0)
+Title.Size = UDim2.new(0, 164, 0, 30)
+Title.Font = Enum.Font.GothamMedium
+Title.Text = "rconsole title"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 17.000
+Title.TextXAlignment = Enum.TextXAlignment.Left
+
+UIPadding.Parent = Title
+UIPadding.PaddingTop = UDim.new(0, 5)
+
+ConsoleIcon.Name = "ConsoleIcon"
+ConsoleIcon.Parent = ConsoleFrame
+ConsoleIcon.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+ConsoleIcon.BackgroundTransparency = 1.000
+ConsoleIcon.BorderColor3 = Color3.fromRGB(0, 0, 0)
+ConsoleIcon.BorderSizePixel = 0
+ConsoleIcon.Position = UDim2.new(0.00979213417, 0, 0.000874322082, 0)
+ConsoleIcon.Size = UDim2.new(0, 31, 0, 31)
+ConsoleIcon.Image = "http://www.roblox.com/asset/?id=11843683545"
+
+Holder.Name = "Holder"
+Holder.Parent = ConsoleFrame
+Holder.Active = true
+Holder.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Holder.BackgroundTransparency = 1.000
+Holder.BorderColor3 = Color3.fromRGB(0, 0, 0)
+Holder.BorderSizePixel = 0
+Holder.Position = UDim2.new(0, 0, 0.054600548, 0)
+Holder.Size = UDim2.new(1, 0, 0.945399463, 0)
+Holder.ScrollBarThickness = 8
+Holder.CanvasSize = UDim2.new(0,0,0,0)
+Holder.AutomaticCanvasSize = Enum.AutomaticSize.XY
+
+MessageTemplate.Name = "MessageTemplate"
+MessageTemplate.Parent = Holder
+MessageTemplate.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+MessageTemplate.BackgroundTransparency = 1.000
+MessageTemplate.BorderColor3 = Color3.fromRGB(0, 0, 0)
+MessageTemplate.BorderSizePixel = 0
+MessageTemplate.Size = UDim2.new(0.9745, 0, 0.030000001, 0)
+MessageTemplate.Visible = false
+MessageTemplate.Font = Enum.Font.RobotoMono
+MessageTemplate.Text = "TEMPLATE"
+MessageTemplate.TextColor3 = Color3.fromRGB(255, 255, 255)
+MessageTemplate.TextSize = 20.000
+MessageTemplate.TextXAlignment = Enum.TextXAlignment.Left
+MessageTemplate.TextYAlignment = Enum.TextYAlignment.Top
+MessageTemplate.RichText = true
+
+UIListLayout.Parent = Holder
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 4)
+
+HolderPadding.Name = "HolderPadding"
+HolderPadding.Parent = Holder
+HolderPadding.PaddingLeft = UDim.new(0, 15)
+HolderPadding.PaddingTop = UDim.new(0, 15)
+
+InputTemplate.Name = "InputTemplate"
+InputTemplate.Parent = nil
+InputTemplate.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+InputTemplate.BackgroundTransparency = 1.000
+InputTemplate.BorderColor3 = Color3.fromRGB(0, 0, 0)
+InputTemplate.BorderSizePixel = 0
+InputTemplate.Size = UDim2.new(0.9745, 0, 0.030000001, 0)
+InputTemplate.Visible = false
+InputTemplate.RichText = true
+InputTemplate.Font = Enum.Font.RobotoMono
+InputTemplate.Text = ""
+InputTemplate.PlaceholderText = ''
+InputTemplate.TextColor3 = Color3.fromRGB(255, 255, 255)
+InputTemplate.TextSize = 20.000
+InputTemplate.TextXAlignment = Enum.TextXAlignment.Left
+InputTemplate.TextYAlignment = Enum.TextYAlignment.Top
+
+-- Variables
+local Identity = -1
+local active = true
+-- Others
+local oldLoader = loadstring
+-- Empty Tables
+local clonerefs = {}
+local protecteduis = {}
+local gc = {}
+local Instances = {} -- for nil instances
+local funcs = {} -- main table
+local names = {} -- protected gui names
+local cache = {} -- for cached instances
+local Drawings = {} -- for cleardrawcache
+-- Non empty tables
+local colors = {
+	BLACK = Color3.fromRGB(50, 50, 50),
+	BLUE = Color3.fromRGB(0, 0, 204),
+	GREEN = Color3.fromRGB(0, 255, 0),
+	CYAN = Color3.fromRGB(0, 255, 255),
+	RED = Color3.fromHex('#5A0101'),
+	MAGENTA = Color3.fromRGB(255, 0, 255),
+	BROWN = Color3.fromRGB(165, 42, 42),
+	LIGHT_GRAY = Color3.fromRGB(211, 211, 211),
+	DARK_GRAY = Color3.fromRGB(169, 169, 169),
+	LIGHT_BLUE = Color3.fromRGB(173, 216, 230),
+	LIGHT_GREEN = Color3.fromRGB(144, 238, 144),
+	LIGHT_CYAN = Color3.fromRGB(224, 255, 255),
+	LIGHT_RED = Color3.fromRGB(255, 204, 203),
+	LIGHT_MAGENTA = Color3.fromRGB(255, 182, 193),
+	YELLOW = Color3.fromRGB(255, 255, 0),
+	WHITE = Color3.fromRGB(255, 255, 255),
+	ORANGE = Color3.fromRGB(255, 186, 12)
+}
+local patterns = {
+    { pattern = '(%w+)%s*%+=%s*(%w+)', format = "%s = %s + %s" },
+    { pattern = '(%w+)%s*%-=%s*(%w+)', format = "%s = %s - %s" },
+    { pattern = '(%w+)%s*%*=%s*(%w+)', format = "%s = %s * %s" },
+    { pattern = '(%w+)%s*/=%s*(%w+)', format = "%s = %s / %s" }
+}
+local patterns2 = {
+ { pattern = 'for%s+(%w+)%s*,%s*(%w+)%s*in%s*(%w+)%s*do', format = "for %s, %s in pairs(%s) do" }
+}
+local renv = {
+    print, warn, error, assert, collectgarbage, load, require, select, tonumber, tostring, type, xpcall, pairs, next, ipairs,
+    newproxy, rawequal, rawget, rawset, rawlen, setmetatable, PluginManager,
+    coroutine.create, coroutine.resume, coroutine.running, coroutine.status, coroutine.wrap, coroutine.yield,
+    bit32.arshift, bit32.band, bit32.bnot, bit32.bor, bit32.btest, bit32.extract, bit32.lshift, bit32.replace, bit32.rshift, bit32.xor,
+    math.abs, math.acos, math.asin, math.atan, math.atan2, math.ceil, math.cos, math.cosh, math.deg, math.exp, math.floor, math.fmod, math.frexp, math.ldexp, math.log, math.log10, math.max, math.min, math.modf, math.pow, math.rad, math.random, math.randomseed, math.sin, math.sinh, math.sqrt, math.tan, math.tanh,
+    string.byte, string.char, string.find, string.format, string.gmatch, string.gsub, string.len, string.lower, string.match, string.pack, string.packsize, string.rep, string.reverse, string.sub, string.unpack, string.upper,
+    table.concat, table.insert, table.pack, table.remove, table.sort, table.unpack,
+    utf8.char, utf8.charpattern, utf8.codepoint, utf8.codes, utf8.len, utf8.nfdnormalize, utf8.nfcnormalize,
+    os.clock, os.date, os.difftime, os.time,
+    delay, elapsedTime, require, spawn, tick, time, typeof, UserSettings, version, wait,
+    task.defer, task.delay, task.spawn, task.wait,
+    debug.traceback, debug.profilebegin, debug.profileend
+}
+local keys={[0x08]=Enum.KeyCode.Backspace,[0x09]=Enum.KeyCode.Tab,[0x0C]=Enum.KeyCode.Clear,[0x0D]=Enum.KeyCode.Return,[0x10]=Enum.KeyCode.LeftShift,[0x11]=Enum.KeyCode.LeftControl,[0x12]=Enum.KeyCode.LeftAlt,[0x13]=Enum.KeyCode.Pause,[0x14]=Enum.KeyCode.CapsLock,[0x1B]=Enum.KeyCode.Escape,[0x20]=Enum.KeyCode.Space,[0x21]=Enum.KeyCode.PageUp,[0x22]=Enum.KeyCode.PageDown,[0x23]=Enum.KeyCode.End,[0x24]=Enum.KeyCode.Home,[0x2D]=Enum.KeyCode.Insert,[0x2E]=Enum.KeyCode.Delete,[0x30]=Enum.KeyCode.Zero,[0x31]=Enum.KeyCode.One,[0x32]=Enum.KeyCode.Two,[0x33]=Enum.KeyCode.Three,[0x34]=Enum.KeyCode.Four,[0x35]=Enum.KeyCode.Five,[0x36]=Enum.KeyCode.Six,[0x37]=Enum.KeyCode.Seven,[0x38]=Enum.KeyCode.Eight,[0x39]=Enum.KeyCode.Nine,[0x41]=Enum.KeyCode.A,[0x42]=Enum.KeyCode.B,[0x43]=Enum.KeyCode.C,[0x44]=Enum.KeyCode.D,[0x45]=Enum.KeyCode.E,[0x46]=Enum.KeyCode.F,[0x47]=Enum.KeyCode.G,[0x48]=Enum.KeyCode.H,[0x49]=Enum.KeyCode.I,[0x4A]=Enum.KeyCode.J,[0x4B]=Enum.KeyCode.K,[0x4C]=Enum.KeyCode.L,[0x4D]=Enum.KeyCode.M,[0x4E]=Enum.KeyCode.N,[0x4F]=Enum.KeyCode.O,[0x50]=Enum.KeyCode.P,[0x51]=Enum.KeyCode.Q,[0x52]=Enum.KeyCode.R,[0x53]=Enum.KeyCode.S,[0x54]=Enum.KeyCode.T,[0x55]=Enum.KeyCode.U,[0x56]=Enum.KeyCode.V,[0x57]=Enum.KeyCode.W,[0x58]=Enum.KeyCode.X,[0x59]=Enum.KeyCode.Y,[0x5A]=Enum.KeyCode.Z,[0x5D]=Enum.KeyCode.Menu,[0x60]=Enum.KeyCode.KeypadZero,[0x61]=Enum.KeyCode.KeypadOne,[0x62]=Enum.KeyCode.KeypadTwo,[0x63]=Enum.KeyCode.KeypadThree,[0x64]=Enum.KeyCode.KeypadFour,[0x65]=Enum.KeyCode.KeypadFive,[0x66]=Enum.KeyCode.KeypadSix,[0x67]=Enum.KeyCode.KeypadSeven,[0x68]=Enum.KeyCode.KeypadEight,[0x69]=Enum.KeyCode.KeypadNine,[0x6A]=Enum.KeyCode.KeypadMultiply,[0x6B]=Enum.KeyCode.KeypadPlus,[0x6D]=Enum.KeyCode.KeypadMinus,[0x6E]=Enum.KeyCode.KeypadPeriod,[0x6F]=Enum.KeyCode.KeypadDivide,[0x70]=Enum.KeyCode.F1,[0x71]=Enum.KeyCode.F2,[0x72]=Enum.KeyCode.F3,[0x73]=Enum.KeyCode.F4,[0x74]=Enum.KeyCode.F5,[0x75]=Enum.KeyCode.F6,[0x76]=Enum.KeyCode.F7,[0x77]=Enum.KeyCode.F8,[0x78]=Enum.KeyCode.F9,[0x79]=Enum.KeyCode.F10,[0x7A]=Enum.KeyCode.F11,[0x7B]=Enum.KeyCode.F12,[0x90]=Enum.KeyCode.NumLock,[0x91]=Enum.KeyCode.ScrollLock,[0xBA]=Enum.KeyCode.Semicolon,[0xBB]=Enum.KeyCode.Equals,[0xBC]=Enum.KeyCode.Comma,[0xBD]=Enum.KeyCode.Minus,[0xBE]=Enum.KeyCode.Period,[0xBF]=Enum.KeyCode.Slash,[0xC0]=Enum.KeyCode.Backquote,[0xDB]=Enum.KeyCode.LeftBracket,[0xDD]=Enum.KeyCode.RightBracket,[0xDE]=Enum.KeyCode.Quote} -- for keypress
+local Fonts = { -- Drawing.Fonts
+ [0] = Enum.Font.Arial,
+ [1] = Enum.Font.BuilderSans,
+ [2] = Enum.Font.Gotham,
+ [3] = Enum.Font.RobotoMono
+}
+-- rconsole
+local MessageColor = colors['WHITE']
+local ConsoleClone = nil
+-- functions
+local function Descendants(tbl)
+    local descendants = {}
+    
+    local function process_table(subtbl, prefix)
+        for k, v in pairs(subtbl) do
+            local index = prefix and (prefix .. "." .. tostring(k)) or tostring(k)
+            descendants[index] = v
+            if type(v) == 'table' then
+                process_table(v, index)
+            else
+                descendants[index] = v
+            end
         end
     end
 
-    return false
-end
-
-_oth.get_root_callback = function(target)
-    local list = hooks[target]
-    if not list or #list == 0 then
-        return target
+    if type(tbl) ~= 'table' then
+        descendants[tostring(1)] = tbl
+    else
+        process_table(tbl, nil)
     end
-
-    return list[1].callback
+    
+    return descendants
 end
 
-_oth.is_hook_thread = function()
-    return hook_threads[coroutine.running()] == true
+local function rawlength(tbl)
+ local a = 0
+ for i, v in pairs(tbl) do
+  a = a + 1
+ end
+ return a
 end
 
-_oth.get_original_thread = function()
-    return og_threads[coroutine.running()]
+local function ToPairsLoop(code)
+    for _, p in ipairs(patterns2) do
+        code = code:gsub(p.pattern, function(var1, var2, tbl)
+            return p.format:format(var1, var2, tbl)
+        end)
+    end
+    return code
 end
 
-local oth = oth or {}; getgenv().oth = oth;local existing_oth = oth
-for k, v in pairs(oth) do
-    if not existing_oth[k] then
-        existing_oth[k] = v
+local function SafeOverride(a, b, c) --[[ Index, Data, Should override ]]
+    if getgenv()[a] and not c then return 1 end
+    getgenv()[a] = b
+
+    return 2
+end
+
+local function toluau(code)
+    for _, p in ipairs(patterns) do
+        code = code:gsub(p.pattern, function(var, value)
+            return p.format:format(var, var, value)
+        end)
+    end
+    code = ToPairsLoop(code)
+    return code
+end
+
+local function handleInput(input, Object)
+    if isDragging then
+        local delta = input.Position - dragStartPos
+        Object.Position = UDim2.new(
+            frameStartPos.X.Scale, 
+            frameStartPos.X.Offset + delta.X, 
+            frameStartPos.Y.Scale, 
+            frameStartPos.Y.Offset + delta.Y
+        )
     end
 end
 
-local new_oth = {}
-for k, v in pairs(getgenv().oth) do
-    new_oth[k] = v
+local function startDrag(input, Object)
+    isDragging = true
+    dragStartPos = input.Position
+    frameStartPos = Object.Position
+    input.UserInputState = Enum.UserInputState.Begin
 end
 
-for k, v in pairs(_oth) do
-    if new_oth[k] == nil then
-        new_oth[k] = v
+local function stopDrag(input)
+    isDragging = false
+    input.UserInputState = Enum.UserInputState.End
+end
+
+-- Main Functions
+function QueueGetIdentity()
+  printidentity()
+  task.wait(.1)
+  local messages = Log:GetLogHistory()
+  local message;
+  if not messages[#messages].message:match("Current identity is") then
+   for i = #messages, 1, -1 do
+    if messages[i].message:match("Current identity is %d") then
+     message = messages[i].message
+     break
     end
+   end
+  else
+   message = messages[#messages].message:match('Current identity is %d'):gsub("Current identity is ", '')
+  end
+  Identity = tonumber(message)
 end
-getgenv().oth = new_oth
-
--- Debug
-
-local _debug = {}
-
-_debug.validlevel = function(level)
-    return debug.getinfo(level + 2) ~= nil
-end
-
-_debug.isvalidlevel = function(level)
-    expect(level, "number", false, 1)
-    return level >= 0
+local Queue = {}
+Queue.__index = Queue
+function Queue.new()
+    local self = setmetatable({}, Queue)
+    self.elements = {}
+    return self
 end
 
-_debug.getregistry = function()
-    return getreg and getreg() or {}
+function Queue:Queue(element)
+    table.insert(self.elements, element)
 end
 
-local constants = {}
-_debug.getconstant = function(func, index)
-    expect(func, "function", false, 1)
-    expect(index, "number", false, 2)
-    local c = constants[func]
-    if not c or c[index] == nil then
-        error("constant does not exist at index " .. index)
-    end
-    return c[index]
-end
-
-_debug.getconstants = function(func)
-    expect(func, "function", false, 1)
-    return constants[func] or {}
-end
-
-_debug.setconstant = function(func, index, value)
-    expect(func, "function", false, 1)
-    expect(index, "number", false, 2)
-    constants[func] = constants[func] or {}
-    constants[func][index] = value
-end
-
-local upvalues = {}
-_debug.getupvalue = function(func, index)
-    expect(func, "function", false, 1)
-    expect(index, "number", false, 2)
-    local u = upvalues[func]
-    if not u or u[index] == nil then
+function Queue:Update()
+    if #self.elements == 0 then
         return nil
     end
-    return u[index]
+    return table.remove(self.elements, 1)
 end
 
-_debug.getupvalues = function(func)
-    expect(func, "function", false, 1)
-    return upvalues[func] or {}
+function Queue:IsEmpty()
+    return #self.elements == 0
+end
+function Queue:Current()
+    return self.elements
 end
 
-_debug.setupvalue = function(func, index, value)
-    expect(func, "function", false, 1)
-    expect(index, "number", false, 2)
-    upvalues[func] = upvalues[func] or {}
-    upvalues[func][index] = value
-end
+-- Events
+game.DescendantRemoving:Connect(function(des)
+ table.insert(Instances, des)
+ cache[des] = 'REMOVE'
+end)
+game.DescendantAdded:Connect(function(des)
+ cache[des] = true
+end)
+game:GetService("UserInputService").WindowFocused:Connect(function()
+ active = true
+end)
 
-local stacks = {}
-_debug.getstack = function(level, index)
-    expect(level, "number", false, 1)
-    local stack = stacks[level]
-    if not stack then
-        error("invalid stack level: " .. level)
+game:GetService("UserInputService").WindowFocusReleased:Connect(function()
+ active = false
+end)
+
+game:GetService("UserInputService").InputChanged:Connect(function(input)
+    if not input then return end
+    if isDragging and input.UserInputType == Enum.UserInputType.MouseMovement and ConsoleClone then
+        handleInput(input, ConsoleClone.ConsoleFrame)
     end
+end)
 
-    if index then
-        expect(index, "number", false, 2)
-        if stack[index] == nil then
-            error("stack value does not exist at index " .. index)
-        end
-        return stack[index]
+game:GetService("UserInputService").InputEnded:Connect(function(input)
+    if not input then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        stopDrag(input)
     end
-
-    return stack
-end
-
-_debug.setstack = function(level, index, value)
-    expect(level, "number", false, 1)
-    expect(index, "number", false, 2)
-    stacks[level] = stacks[level] or {}
-    stacks[level][index] = value
-end
-
-_debug.setinfo = function(func, info)
-    expect(func, "function", false, 1)
-    expect(info, "table", false, 2)
-    debug_override[func] = info
-end
-
--- claudestein
-local function getFunctionLines(source, startLine)
-    local currentLine = 0
-    local depth = 0
-    local started = false
-    local result = {}
-
-    for line in (source .. "\n"):gmatch("([^\n]*)\n") do
-        currentLine = currentLine + 1
-
-        if currentLine >= startLine then
-            result[#result + 1] = line
-
-            -- count openers
-            for _ in line:gmatch("%f[%a]do%f[%A]") do depth = depth + 1 end
-            for _ in line:gmatch("%f[%a]then%f[%A]") do depth = depth + 1 end
-            for _ in line:gmatch("%f[%a]function%f[%A]") do depth = depth + 1 end
-            for _ in line:gmatch("%f[%a]repeat%f[%A]") do depth = depth + 1 end
-
-            -- count closers
-            for _ in line:gmatch("%f[%a]end%f[%A]") do depth = depth - 1 end
-            for _ in line:gmatch("%f[%a]until%f[%A]") do depth = depth - 1 end
-
-            if not started and depth > 0 then
-                started = true
-            end
-
-            if started and depth <= 0 then
-                break
-            end
-        end
-    end
-
-    return table.concat(result, "\n")
-end
-                                    
-_debug.getinfo = function(target)
-    local isLevel = typeof(target) == "number"
-    local level = isLevel and (target + 1) or target
-
-    local function dinfo(opt)
-        return debug.info(level, opt)
-    end
-
-    local source = dinfo("s")
-    local name = dinfo("n")
-    local currentline = isLevel and dinfo("l") or -1 -- functions don't have a running line
-    local nparams, is_vararg = dinfo("a")
-    local nups = dinfo("u")
-
-    if name == "" then name = nil end
-
-    -- short_src
-    local short_src = source
-    if source and source:sub(1,1) == "@" then
-        short_src = source:match("[^/\\]+$")
-    end
-
-    -- what
-    local what
-    if source == "[C]" then
-        what = "C"
-    elseif isLevel and target == 0 then
-        what = "main"
-    else
-        what = "Lua"
-    end
-
-    -- func
-    local func = isLevel and debug.info(level, "f") or target
-    local hash = getfunctionhash and getfunctionhash(func) or ""
-
+end)
+-- Libraries
+funcs.base64 = {}
+funcs.crypt = {hex={},url={}}
+funcs.syn = {}
+funcs.syn_backup = {}
+funcs.http = {}
+funcs.Drawing = {}
+funcs.cache = {}
+funcs.string = string
+funcs.debug = debug
+funcs.debug.getinfo = function(t)
+    local CurrentLine = tonumber(debug.info(t, 'l'))
+    local Source = debug.info(t, 's')
+    local name = debug.info(t, 'n')
+    local numparams, isvrg = debug.info(t, 'a')
+    if #name == 0 then name = nil end
+    local a, b = debug.info(t, 'a')
     return {
-        name = name,
-        source = source,
-        short_src = short_src,
-        what = what,
-        currentline = currentline,
-        nups = nups,
-        numparams = nparams,
-        is_vararg = is_vararg,
-        hash = hash,
-        size = #hash, -- idk uhhh thought it would be cool but executors should implement differently
-        func = func,
-
-        lastlinedefined = getFunctionLines(decompile(source), currentline)
-    }
+     ['currentline'] = CurrentLine,
+     ['source'] = Source,
+     ['name'] = tostring(name),
+     ['numparams'] = tonumber(numparams),
+     ['is_vararg'] = isvrg and 1 or 0,
+     ['short_src'] = tostring(Source:sub(1, 60)),
+     ['what'] = Source == '[C]' and 'C' or 'Lua',
+     ['func'] = t,
+     ['nups'] = 0 -- i CANNOT make an upvalue thingy
+     }
 end
 
-_debug.getproto = function(func)
-    expect(func, "function", false, 1)
-    return nil
-end
+funcs.Drawing.Fonts = {
+  ['UI'] = 0,
+  ['System'] = 1,
+  ['Plex'] = 2,
+  ['Monospace'] = 3
+}
 
-_debug.getprotos = function(func)
-    expect(func, "function", false, 1)
-    return {}
-end
 
---return #debug.getprotos(func)
-_debug.getprotosize = function(func)
-    expect(func, "function", false, 1)
+local ClipboardQueue = Queue.new()
+local ConsoleQueue = Queue.new()
+local getgenv = getgenv or getfenv(2)
+getgenv().getgenv = getgenv
 
-    local count = 0
+-- [[ Functions ]]
 
-    while true do
-        local ok, proto = pcall(debug.getproto, func, count + 1)
+--[[funcs.cloneref = function(a)
+    if not clonerefs[a] then clonerefs[a] = {} end
+    local Clone = {}
 
-        if not ok then
-            break
-        end
-
-        count += 1
-    end
-
-    return count
-end
-
-_debug.getcallstack = function()
-    local stack = {}
-    local level = 1
-
-    while true do
-        local ok, info = pcall(debug.getinfo, level + 1)
-        if not ok or not info then break end
-
-        stack[#stack + 1] = {
-            func = info.func,
-            name = info.name,
-            source = info.short_src,
-            line = info.currentline
-        }
-
-        level += 1
-    end
-
-    return stack
-end
-
-if hookfunction then
-    local old_traceback
-    old_traceback = hookfunction(debug.traceback, function(...)
-        local tb = old_traceback(...)
-
-        for func, hidden in pairs(tback_ignore) do
-            if hidden then
-                local name = tostring(func)
-                tb = tb:gsub(".-"..name..".-\n", "")
-            end
-        end
-
-        return tb
-    end)
-end
-
-for k, v in pairs(_debug) do
-    add("debug." .. k, v)
-end
-
-local new_debug = {}
-for k, v in pairs(getgenv().debug or {}) do
-    new_debug[k] = v
-end
-
-for k, v in pairs(_debug) do
-    if new_debug[k] == nil then
-        new_debug[k] = v
-    end
-end
-getgenv().debug = new_debug
-
--- Raknet
-
-local _raknet = {}
-
--- highkey none of this existed
--- thanks volt for added raknet
-    -- w docs as always
-do
-    -- this code is from that v3rm guy
-
-    _raknet.GetService = function(self, Service)
-        if not cloneref then return Service end -- for pastesploit users
-    
-        if Service == "VirtualInputManager" or Service == "VirtualUser" then
-            return cloneref(Instance.new(Service)) -- Thanks syn.lua
-        end
-
-        return cloneref(Service)
-    end
-
-    _raknet.GetLocalPlayer = function()
-        return _raknet:GetService(game:GetService("Players")).LocalPlayer
-    end
-
-    _raknet.GetCharacter = function()
-        return _raknet:GetLocalPlayer().Character or _raknet:GetLocalPlayer().CharacterAdded:Wait()
-    end
-
-    _raknet.GetPrimaryPart = function()
-        return _raknet:GetCharacter():FindFirstChild("HumanoidRootPart")
-    end
-
-    _raknet.GetHumanoid = function()
-        return _raknet:GetCharacter():FindFirstChildOfClass("Humanoid")
-    end
-
-    _raknet.SendKickPacket = function(self, OptionalMessage)
-        if OptionalMessage then
-            _raknet:GetLocalPlayer():Kick(`{OptionalMessage}`)
-            return
-        end
-
-        _raknet:GetLocalPlayer():Kick(`You have been kicked by the use of RakNet packets, {raknet:GetLocalPlayer().UserId}`)
-    end
-
-    add("crash", function()
-        local function recurse()
-            local t = {}
-            for i = 1, 1000 do
-                t[i] = string.rep("x", 1000000)
-            end
-            recurse()
-        end
-        recurse()
-    end)
-
-    _raknet.SendCrashPacket = function()
-        --while _raknet do --[[0x8231]] end
-        crash()
-    end
-
-    _raknet.SendHumanoidPropertyChangePacket = function(self, Property, Value)
-        _raknet:GetHumanoid()[Property] = Value
-    end
-
-    _raknet.SendClientLagPacket = function(self, Time)
-        local og = getfpscap()
-
-        setfpscap(math.random(1,25))
-        task.delay((Time or 1), function()
-            setfpscap(og)
-        end)
-    end
-end
-
-local hooks, Packet = {}, {}
-Packet.__index = Packet
-
-local function toArray(data)
-    if typeof(data) == "string" then
-        local t = {}
-        for i = 1, #data do
-            t[i] = string.byte(data, i)
-        end
-        return t
-    elseif typeof(data) == "table" then
-        return data
-    else
-        return {}
-    end
-end
-
-local function _tostring(data)
-    if typeof(data) == "string" then
-        return data
-    elseif typeof(data) == "table" then
-        local chars = {}
-        for i, v in ipairs(data) do
-            chars[i] = string.char(v)
-        end
-        return table.concat(chars)
-    else
-        return ""
-    end
-end
-
-function Packet.new(data, priority, reliability, ordering)
-    local self = setmetatable({}, Packet)
-
-    self._data = data
-    self.Priority = priority or 0
-    self.Reliability = reliability or 0
-    self.OrderingChannel = ordering or 0
-    self._blocked = false
-
-    return self
-end
-
-function Packet:UpdateViews()
-    self.AsArray = toArray(self._data)
-    self.AsString = _tostring(self._data)
-    self.Size = #self.AsArray
-end
-
-function Packet:SetData(data)
-    self._data = data
-    self:UpdateViews()
-end
-
-function Packet:Block()
-    self._blocked = true
-end
-
-function _raknet.add_send_hook(hook)
-    table.insert(hooks, hook)
-end
-
-function _raknet.remove_send_hook(hook)
-    for i, v in ipairs(hooks) do
-        if v == hook then
-            table.remove(hooks, i)
-            break
-        end
-    end
-end
-
-function _raknet.send(data, priority, reliability, ordering_channel)
-    local packet = Packet.new(data, priority, reliability, ordering_channel)
-    packet:UpdateViews()
-
-    -- run hooks
-    for _, hook in ipairs(hooks) do
-        local ok, err = pcall(hook, packet)
-        if not ok then
-            warn("raknet hook error:", err)
-        end
-
-        if packet._blocked then
-            warn("[raknet] packet blocked")
-            return
-        end
-    end
-
-    -- we really should be sending this but thats not to possible so
-    if testing then
-        print("[raknet] sent packet:")
-        print("  size:", packet.Size)
-        print("  priority:", packet.Priority)
-        print("  reliability:", packet.Reliability)
-        print("  ordering:", packet.OrderingChannel)
-        print("  data:", packet.AsString)
-    end
-end
-
--- from this guy : https://v3rm.net/threads/release-raknet-desync.27587/
--- which is from somewhere else
-local function rakhook(packet)
-    if packet.PacketId == 0x1B then
-        local buf = packet.AsBuffer
-        buffer.writeu32(buf, 1, 0xFFFFFFFF)
-        packet:SetData(buf)
-    end
-end
-
-local hooked = false
-_raknet.desync = function()
-    raknet.add_send_hook(rakhook)
-    hooked = true
-end
-_raknet.sync = function()
-    if hooked then
-        raknet.remove_send_hook(rakhook)
-    end
-    hooked = false
-end
-
---[[ -- crashes you. Im prolly getting banned soon enough
-    raknet.add_send_hook(function(packet)
-        local data = packet.AsBuffer
-        buffer.writeu32(data, 1, 0xFFFFFFFF)
-        packet:SetData(data)
-    end)
-]]
-
--- raknet wrapper
-if raknet and loadstring and false then -- remove false
-    loadstring(game:HttpGet("https://github.com/xaviersupreme/raknet-wrapper/raw/main/raknet.luau"))()
-end
-
-genv.raknet = genv.raknet or genv.rnet or {}
-
-for k, v in pairs(_raknet) do
-    add("raknet." .. k, v)
-end
-
-local new_raknet = {}
-for k, v in pairs(getgenv().raknet) do
-    new_raknet[k] = v
-end
-
-for k, v in pairs(_raknet) do
-    if new_raknet[k] == nil then
-        new_raknet[k] = v
-    end
-end
-
-genv.raknet = new_raknet
-genv.rnet = new_raknet
-
--- Helper -- this is like a module?? idk useless anyway
-
-local function createBindable()
-    return Instance.new("BindableEvent")
-end
-
-local _helper = {}
-
-_helper.kill = function(thread)
-    task.cancel(thread)
-end
-
-_helper.chunkify = function(input, chunk_size)
-    chunk_size = chunk_size or 2
-    local result = {}
-
-    local function process(value)
-        local vtype = type(value)
-
-        if vtype == "string" then
-            for i = 1, #value, chunk_size do
-                table.insert(result, value:sub(i, i + chunk_size - 1))
-            end
-
-        elseif vtype == "number" then
-            local str = tostring(value)
-            for i = 1, #str, chunk_size do
-                table.insert(result, str:sub(i, i + chunk_size - 1))
-            end
-
-        elseif vtype == "boolean" or vtype == "function" then
-            table.insert(result, value)
-
-        elseif vtype == "table" then
-            for _, nested in ipairs(value) do
-                process(nested)
-            end
-
-        else
-            table.insert(result, value)
-        end
-    end
-
-    for _, v in ipairs(input) do
-        process(v)
-    end
-
-    return table.concat(result, "")
-end
-
--- removed _helper.unchunk
--- removed _helper.fromtable
-
-_helper.tabledata = function(data)
-    local result = {}
-
-    for _, v in pairs(data) do
-        local t = type(v)
-        result[t] = (result[t] or 0) + 1
-    end
-
-    return result
-end
-
-_helper.sum = function(tbl)
-    expect(tbl, "table", false, 1)
-    local total = 0
-    for _, v in ipairs(tbl) do
-        expect(v, "number", false, 1)
-        total += v
-    end
-    return total
-end
-
-_helper.average = function(tbl)
-    expect(tbl, "table", false, 1)
-    assert(#tbl > 0, "table cannot be empty")
-    return _helper.sum(tbl) / #tbl
-end
-
--- local t = {"string", "pango", 3, "rango"}
--- print(helper.search(t, 3, true, { type = "number" }))
---  returns "3 3"
-_helper.search = function(tbl, looking_for, nested, filter)
-    expect(tbl, "table", false, 1)
-    expect(nested, "boolean", false, 2)
-    expect(filter, "table", false, 3)
-
-    for k, v in pairs(tbl) do
-        local match = (v == looking_for)
-
-        if filter and filter.type then
-            match = match and (type(v) == filter.type)
-        end
-
-        if match then
-            return k, v
-        end
-
-        if nested and type(v) == "table" then
-            local foundK, foundV = _helper.search(v, looking_for, true, filter)
-            if foundK ~= nil then
-                return foundK, foundV
-            end
-        end
-    end
-
-    return nil, "Item could not be found"
-end
-
-local function set(data, func)
-    local result = {}
-    for k, v in pairs(data) do
-        result[k] = func(v)
-    end
-    return result
-end
-
-_helper.tostring = function(data)
-    return _tostring(data)
-end
-
--- for tables
-_helper.tabletostring = function(data)
-    return set(data, tostring)
-end
-
-_helper.tabletonumber = function(data)
-    return set(data, tonumber)
-end
-
-_helper.is_repeating = function(v)
-    local t = type(v)
-
-    if t == "string" then
-        if #v <= 1 then return true end
-        local first = v:sub(1, 1)
-        for i = 2, #v do
-            if v:sub(i, i) ~= first then
-                return false
-            end
-        end
-        return true
-    end
-
-    -- table
-    if #v == 0 then return true end
-    local first = v[1]
-    for i = 2, #v do
-        if v[i] ~= first then
-            return false
-        end
-    end
-
-    return true
-end
-
-_helper.toexpontent = function(n)
-    if n == 0 then return "0e0" end
-
-    local exp = 0
-    local value = n
-
-    while value >= 10 do
-        value /= 10
-        exp += 1
-    end
-
-    while value < 1 do
-        value *= 10
-        exp -= 1
-    end
-
-    return string.format("%.3ge%d", value, exp)
-end
-
-_helper.fromexpontent = function(str)
-    local base, exp = str:match("([%d%.]+)e([%-]?%d+)")
-    base = tonumber(base)
-    exp = tonumber(exp)
-
-    if not base or not exp then return nil end
-
-    return base * (10 ^ exp)
-end
-
-_helper.flip = function(var)
-    expect(var, "boolean", false, 1)
-    return not var
-end
-
-_helper.GetChildrenWithAttribute = function(parent, attr)
-    local result = {}
-
-    for _, child in ipairs(parent:GetChildren()) do
-        if child:GetAttribute(attr) ~= nil then
-            table.insert(result, child)
-        end
-    end
-
-    return result
-end
-
-local collection = services["CollectionService"]
-
-_helper.GetChildrenWithTag = function(parent, tag)
-    local result = {}
-
-    for _, instance in ipairs(collection:GetTagged(tag)) do
-        if instance.Parent == parent then
-            table.insert(result, instance)
-        end
-    end
-
-    return result
-end
-
--- claude
-_helper.removeduplicates = function(t: table): table
-    local seen = {}
-    local result = {}
-
-    for _, v in pairs(t) do
-        if not seen[v] then
-            seen[v] = true
-            table.insert(result, v)
-        end
-    end
-
-    return result
-end
-
-_helper.issametable = function(a: table, b: table): bool
-    if a == b then return true end
-    if typeof(a) ~= "table" or typeof(b) ~= "table" then return false end
-
-    -- Check same number of keys
-    local aCount, bCount = 0, 0
-    for _ in pairs(a) do aCount += 1 end
-    for _ in pairs(b) do bCount += 1 end
-    if aCount ~= bCount then return false end
-
-    -- Check all keys/values match
-    for k, v in pairs(a) do
-        local bv = b[k]
-        if typeof(v) == "table" and typeof(bv) == "table" then
-            if not issametable(v, bv) then return false end
-        elseif v ~= bv then
-            return false
-        end
-    end
-
-    return true
-end
-
-for k, v in pairs(_helper) do
-    add("helper." .. k, v)
-end
-getgenv().helper = _helper
-
--- Drawing
-
-local dache = {}
-
-local function applyBase(obj, self)
-    obj.Visible = self.Visible
-    obj.ZIndex = math.clamp(self.ZIndex, -2^31, 2^31)
-    obj.BackgroundTransparency = 1 - self.Transparency
-    obj.BackgroundColor3 = self.Color
-end
-
-local function makeProxy(self, update, readonly)
-    readonly = readonly or {}
-    local proxy = newproxy(true)
-    local mt = getmetatable(proxy)
-
-    mt.__index = function(_, k)
-        return self[k]
-    end
-
-    mt.__newindex = function(_, k, v)
-        for _, r in ipairs(readonly) do
-            if r == k then return end
-        end
-        self[k] = v
-        update()
-    end
+    local mt = {__type='Instance'} -- idk if this works ;(
 
     mt.__tostring = function()
-        return "Drawing"
+        return a.Name
     end
 
-    mt.__metatable = "This metatable is protected."
-    return proxy
-end
-
-local types = {}
-
-types.Line = function(self, Object)
-    local function update()
-        local from, to = self.From, self.To
-        local dx, dy = to.X - from.X, to.Y - from.Y
-        local len = math.sqrt(dx^2 + dy^2)
-        Object.Size = UDim2.fromOffset(len, self.Thickness)
-        Object.Position = UDim2.fromOffset(from.X, from.Y)
-        Object.Rotation = math.deg(math.atan2(dy, dx))
-        Object.BackgroundColor3 = self.Color
-        Object.Visible = self.Visible
-        Object.ZIndex = math.clamp(self.ZIndex, -2^31, 2^31)
-    end
-
-    self.From = Vector2.zero
-    self.To = Vector2.zero
-    self.Thickness = 1
-    self.Color = Color3.new(1, 1, 1)
-    self.Visible = true
-    self.ZIndex = 1
-    self.Transparency = 1
-
-    local proxy = makeProxy(self, update)
-    update()
-    return proxy
-end
-
-types.Square = function(self, Object)
-    local stroke = Instance.new("UIStroke", Object)
-    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-
-    local function update()
-        applyBase(Object, self)
-        Object.Size = UDim2.fromOffset(self.Size.X, self.Size.Y)
-        Object.Position = UDim2.fromOffset(self.Position.X, self.Position.Y)
-        if self.Filled then
-            Object.BackgroundTransparency = 0
-            stroke.Enabled = false
-        else
-            Object.BackgroundTransparency = 1
-            stroke.Enabled = true
-            stroke.Color = self.Color
-            stroke.Thickness = self.Thickness
-        end
-    end
-
-    self.Size = Vector2.zero
-    self.Position = Vector2.zero
-    self.Color = Color3.new(1, 1, 1)
-    self.Filled = false
-    self.Thickness = 1
-    self.Visible = true
-    self.ZIndex = 1
-    self.Transparency = 1
-
-    return makeProxy(self, update)
-end
-
-types.Circle = function(self, Object)
-    Instance.new("UICorner", Object).CornerRadius = UDim.new(1, 0)
-    local stroke = Instance.new("UIStroke", Object)
-    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-
-    local function update()
-        local d = self.Radius * 2
-        Object.Size = UDim2.fromOffset(d, d)
-        Object.Position = UDim2.fromOffset(
-            self.Position.X - self.Radius,
-            self.Position.Y - self.Radius
-        )
-        Object.Visible = self.Visible
-        Object.ZIndex = math.clamp(self.ZIndex, -2^31, 2^31)
-        if self.Filled then
-            Object.BackgroundTransparency = 1 - self.Transparency
-            Object.BackgroundColor3 = self.Color
-            stroke.Enabled = false
-        else
-            Object.BackgroundTransparency = 1
-            stroke.Enabled = true
-            stroke.Color = self.Color
-            stroke.Thickness = self.Thickness
-        end
-    end
-
-    self.Radius = 1
-    self.Position = Vector2.zero
-    self.Color = Color3.new(1, 1, 1)
-    self.Filled = false
-    self.Thickness = 1
-    self.Visible = true
-    self.ZIndex = 1
-    self.Transparency = 1
-    self.NumSides = 0
-
-    return makeProxy(self, update)
-end
-
-types.Text = function(self, Object)
-    Object:Destroy()
-    Object = Instance.new("TextLabel", UI)
-    Object.BackgroundTransparency = 1
-    Object.BorderSizePixel = 0
-    Object.TextWrapped = false
-    Object.RichText = false
-
-    local function update()
-        Object.Visible = self.Visible
-        Object.ZIndex = math.clamp(self.ZIndex, -2^31, 2^31)
-        Object.Text = self.Text
-        Object.TextSize = self.Size
-        Object.TextColor3 = self.Color
-        Object.BackgroundTransparency = 1 - self.Transparency
-        Object.Position = UDim2.fromOffset(self.Position.X, self.Position.Y)
-        Object.Size = UDim2.fromOffset(self.Size * #self.Text * 0.6, self.Size)
-        Object.Font = ({
-            [0] = Enum.Font.GothamMedium,
-            [1] = Enum.Font.SourceSans,
-            [2] = Enum.Font.Code,
-            [3] = Enum.Font.RobotoMono,
-        })[self.Font] or Enum.Font.GothamMedium
-        Object.TextXAlignment = self.Center and Enum.TextXAlignment.Center or Enum.TextXAlignment.Left
-        Object.TextYAlignment = self.Center and Enum.TextYAlignment.Center or Enum.TextYAlignment.Top
-        Object.TextStrokeTransparency = self.Outline and 0 or 1
-        Object.TextStrokeColor3 = self.OutlineColor
-        self.TextBounds = Object.TextBounds
-    end
-
-    self.Text = ""
-    self.Size = 12
-    self.Font = 3
-    self.Color = Color3.new(1, 1, 1)
-    self.Center = false
-    self.Outline = false
-    self.OutlineColor = Color3.new(0, 0, 0)
-    self.Position = Vector2.zero
-    self.Visible = true
-    self.ZIndex = 1
-    self.Transparency = 1
-    self.TextBounds = Vector2.zero
-
-    return makeProxy(self, update, {"TextBounds"})
-end
-
-local Drawing = {
-    Fonts = {
-        UI = 0,
-        System = 1,
-        Plex = 2,
-        Monospace = 3,
-    },
-
-    new = function(Type)
-        expect(Type, "string", false, 1)
-        assert(types[Type], "invalid drawing type: " .. Type)
-
-        local Object = Instance.new("Frame")
-        Object.BorderSizePixel = 0
-        Object.BackgroundTransparency = 1
-        Object.ZIndex = 1
-        Object.Size = UDim2.fromOffset(0, 0)
-        Object.Parent = UI
-
-        local self = {
-            Remove = function() Object:Destroy() end,
-        }
-        self.Destroy = self.Remove
-
-        local proxy = types[Type](self, Object)
-        table.insert(dache, {proxy = proxy, instance = Object})
-        return proxy
-    end
-}
-
-if getgenv()["Drawing"] == nil then
-    getgenv().Drawing = Drawing
-end
-
-add("isrenderobj", function(a)
-    for _, obj in ipairs(dache) do
-        if obj.proxy == a then return true end
-    end
-    return false
-end)
-
-add("cleardrawcache", function()
-    for _, obj in ipairs(dache) do
-        obj.instance:Destroy()
-    end
-    table.clear(dache)
-end)
-
-add("getrenderproperty", function(a, b)
-    assert(isrenderobj(a), "expected render object, got " .. type(a))
-    expect(b, "string", false, 2)
-    return a[b]
-end)
-
-add("setrenderproperty", function(a, b, c)
-    assert(isrenderobj(a), "expected render object, got " .. type(a))
-    expect(b, "string", false, 2)
-    a[b] = c
-end)
-
--- File System
-
-local executor = (identifyexecutor and identifyexecutor() or "unknown") -- depends on the exec but should show raw version
-local _workspace = executor .. "/workspace"
-
-local function normalize(path)
-    path = tostring(path or "")
-    path = path:gsub("\\", "/")
-    path = path:gsub("^/", "")
-
-    path = path:gsub("^%.%./", "")
-    path = path:gsub("/%.%./", "/")
-
-    if not path:find(_workspace, 1, true) then
-        path = _workspace .. "/" .. path
-    end
-
-    return path
-end
-
-local function parent(path)
-    return path:match("(.+)/[^/]+$") or _workspace
-end
-
-add("writefile", function(path, data)
-    path = normalize(path)
-    fs_files[path] = data
-    fs_folders[parent(path)] = true
-    if allow() then
-        ps:Send(string.format(
-            "Set-Content -Path '%s' -Value '%s'",
-            path,
-            data:gsub("'", "''")
-        ))
-    end
-end)
-
-add("appendfile", function(path, data)
-    path = normalize(path)
-    fs_files[path] = (fs_files[path] or "") .. data
-    fs_folders[parent(path)] = true
-    if allow() then
-        ps:Send(string.format(
-            "Add-Content -Path '%s' -Value '%s'",
-            path,
-            data:gsub("'", "''")
-        ))
-    end
-end)
-
-add("readfile", function(path)
-    path = normalize(path)
-    if fs_files[path] then
-        return fs_files[path]
-    end
-    -- fallback: read from disk
-    if allow() then
-        ps:Send(string.format("Get-Content -Path '%s' -Raw", path))
-    end
-    error("file does not exist in virtual fs: " .. path)
-end)
-
-add("isfile", function(path)
-    path = normalize(path)
-    if fs_files[path] ~= nil then return true end
-    if allow() then
-        ps:Send(string.format("Test-Path -Path '%s' -PathType Leaf", path))
-    end
-    return false
-end)
-
-add("makefolder", function(path)
-    path = normalize(path)
-    fs_folders[path] = true
-    if allow() then
-        ps:Send(string.format(
-            "New-Item -ItemType Directory -Force -Path '%s'",
-            path
-        ))
-    end
-end)
-
-add("isfolder", function(path)
-    path = normalize(path)
-    if fs_folders[path] then return true end
-    if allow() then
-        ps:Send(string.format("Test-Path -Path '%s' -PathType Container", path))
-    end
-    return false
-end)
-
-add("delfile", function(path)
-    path = normalize(path)
-    assert(fs_files[path] ~= nil, "file does not exist: " .. path)
-    fs_files[path] = nil
-    if allow() then
-        ps:Send(string.format("Remove-Item -Path '%s' -Force", path))
-    end
-end)
-
-add("delfolder", function(path)
-    path = normalize(path)
-    for f in pairs(fs_files) do
-        if f:sub(1, #path) == path then fs_files[f] = nil end
-    end
-    for f in pairs(fs_folders) do
-        if f:sub(1, #path) == path then fs_folders[f] = nil end
-    end
-    if allow() then
-        ps:Send(string.format("Remove-Item -Path '%s' -Recurse -Force", path))
-    end
-end)
-
-add("listfiles", function(path)
-    path = normalize(path)
-    local out = {}
-    for f in pairs(fs_files) do
-        if f:sub(1, #path) == path then table.insert(out, f) end
-    end
-    for f in pairs(fs_folders) do
-        if f ~= "" and f:sub(1, #path) == path then table.insert(out, f) end
-    end
-    if allow() then
-        ps:Send(string.format("Get-ChildItem -Path '%s' | Select-Object -ExpandProperty Name", path))
-    end
-    return out
-end)
-
--- Input
-
-local uis = services["UserInputService"]
-
-local active = false -- it exeucted somehow
-    -- maybe autoexec who cares ig
-
-uis.WindowFocused:Connect(function()
-    active = true
-end)
-
-uis.WindowFocusReleased:Connect(function()
-    active = false
-end)
-
-add("isrbxactive", function()
-    return active
-end)
-
-local mouse = uis:GetMouseLocation()
-uis.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then
-        mouse = uis:GetMouseLocation()
-    end
-end)
-
-alias({"closerbx", "closeroblox"}, function()
-    crash()
-end)
-
-local vim = services["VirtualInputManager"]
-add("mouse1press", function()
-    vim:SendMouseButtonEvent(mouse.X, mouse.Y, 0, true, game, 0)
-end)
-
-add("mouse1release", function()
-    vim:SendMouseButtonEvent(mouse.X, mouse.Y, 0, false, game, 0)
-end)
-
-add("mouse1click", function()
-    vim:SendMouseButtonEvent(mouse.X, mouse.Y, 0, true, game, 0)
-    vim:SendMouseButtonEvent(mouse.X, mouse.Y, 0, false, game, 0)
-end)
-
-add("mouse2click", function()
-    vim:SendMouseButtonEvent(mouse.X, mouse.Y, 1, true, game, 0)
-    vim:SendMouseButtonEvent(mouse.X, mouse.Y, 1, false, game, 0)
-end)
-
-add("mouse2release", function()
-    vim:SendMouseButtonEvent(0, 0, 1, false, game, 0)
-end)
-
-add("mousemoveabs", function(x, y)
-    expect(x, "number", false, 1)
-    expect(y, "number", false, 2)
-    vim:SendMouseMoveEvent(x, y, game)
-end)
-
-add("mousemoverel", function(x, y)
-    expect(x, "number", false, 1)
-    expect(y, "number", false, 2)
-    local pos = uis:GetMouseLocation()
-    vim:SendMouseMoveEvent(pos.X + x, pos.Y + y, game)
-end)
-
-add("mousescroll", function(pixels)
-    expect(pixels, "number", false, 1)
-    vim:SendMouseWheelEvent(0, 0, pixels > 0, game)
-end)
-
--- Instance
-
-local char = lp.Character
-local hrp = char.HumanoidRootPart
-
-add("fireclickdetector", function(cd, distance)
-    assert(typeof(cd) == "Instance" and cd:IsA("ClickDetector"), "expected ClickDetector, got " .. typeof(cd))
-
-    distance = distance or 0
-
-    local old = hrp.CFrame
-
-    if cd.Parent and distance ~= 0 then
-        hrp.CFrame = cd.Parent.CFrame
-    end
-
-    cd.MaxActivationDistance = math.huge
-
-    firesignal(cd.MouseHoverEnter)
-    firesignal(cd.MouseClick, game.Players.LocalPlayer)
-    firesignal(cd.MouseHoverLeave)
-
-    hrp.CFrame = old
-end)
-
-add("firetouchinterest", function(part, touched)
-    assert(typeof(part) == "Instance" and part:IsA("BasePart"), "expected BasePart, got " .. typeof(part))
-    firesignal(part, touched == false and "TouchEnded" or "Touched")
-end)
-
-add("isnetworkowner", function(part)
-    assert(typeof(part) == "Instance" and part:IsA("BasePart"), "expected BasePart, got " .. typeof(part))
-    return gethiddenproperty(part, "NetworkOwnerV3") and true or false
-end)
-
-add("getcallbackvalue", function(instance: Instance, property: string)
-    expect(instance, "Instance", false, 1)
-    expect(property, "string", false, 2)
-
-    local ok, result = pcall(function()
-        return getrawmetatable(instance)[property]
-    end)
-
-    if ok and typeof(result) == "function" then
-        return result
-    end
-
-    return nil
-end)
-
-add("getcallbackmember", function(...)
-    getcallbackvalue(...)
-end)
-
-add("fireproximityprompt", function(prompt, triggered, hold)
-    assert(typeof(prompt) == "Instance" and prompt:IsA("ProximityPrompt"), "expected ProximityPrompt, got " .. typeof(prompt))
-    local signal
-    if hold then
-        signal = triggered and "PromptButtonHoldBegan" or "PromptButtonHoldEnded"
-    else
-        signal = triggered == false and "TriggerEnded" or "Triggered"
-    end
-    firesignal(prompt, signal)
-end)
-
-add("getproximitypromptduration", function(pprompt)
-    return pprompt.HoldDuration
-end)
-
-add("setproximitypromptduration", function(pprompt, tset)
-    pprompt.HoldDuration = tset
-end)
-
-local signal_store = {}
-add("getconnections", function(signal)
-    assert(typeof(signal) == "RBXScriptSignal", "expected RBXScriptSignal, got " .. typeof(signal))
-    return signal_store[signal] or {}
-end)
-
-add("getconnection", function(signal)
-    assert(typeof(signal) == "RBXScriptSignal", "expected RBXScriptSignal, got " .. typeof(signal))
-    local t = signal_store[signal]
-    return t and t[1]
-end)
-
-add("getsignalarguments", function()
-    assert(typeof(signal) == "RBXScriptSignal", "expected RBXScriptSignal, got " .. typeof(signal))
-end) 
-add("getsignalargumentsinfo", function()
-    assert(typeof(signal) == "RBXScriptSignal", "expected RBXScriptSignal, got " .. typeof(signal))
-end) 
-
--- salood w code
-add("firesignal", function(instance: Instance, signalName: string, args: any)
-    if instance and signalName then
-        local signal = instance[signalName]
-        if signal then
-            for _, connection in ipairs(getconnections(signal)) do
-                if args then
-                    connection:Fire(args)
-                else
-                    connection:Fire()
-                end
+    mt.__index = function(_, key)
+        local thing = funcs.debug.getmetatable(a)[key]
+        if type(thing) == 'function' then
+            return function(...)
+                return thing(a, ...)
             end
+        else
+            return thing
         end
     end
-end)
-
-add("getcustomasset", function(path)
-    expect(path, "string", false, 1)
-    if not isfile(path) then
-        error("file does not exist: " .. path)
+    mt.__newindex = function(_, key, value)
+     a[key] = value
+    end
+    mt.__metatable = getmetatable(a)
+    mt.__len = function(_)
+     return error('attempt to get length of a userdata value')
     end
 
-    local name = path:match("[^/\\]+$")
-    local new = "content/" .. name
+    setmetatable(Clone, mt)
 
-    if not isfile(new) then
-        writefile(new, readfile(path))
-    end
+    table.insert(clonerefs[a], Clone)
 
-    return "rbxasset://" .. new
-end)
+    return Clone
+end
+TEMPORARY REMOVED UNTIL WE FIND A FIX
+]]
 
-local reflect = services["ReflectionService"]
+-- Thanks to xAPI for the following:
 
-add("getproperties", function(instance)
-    expect(instance, "Instance", false, 1)
-    class = typeof(instance)
+local Sandbox = loadstring(game:HttpGet("https://pastebin.com/raw/a0cuADU4"))()
+funcs.string.dump = loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-Function-Dumper-14820"))()
+funcs.dumpstring = funcs.string.dump
 
-    local allCapabilities = SecurityCapabilities.new(table.unpack(Enum.SecurityCapability:GetEnumItems()))
-    local props = reflect:GetPropertiesOfClass(class, { Security = allCapabilities })
-    local out = {}
+-- // The rest is made by me.
 
-    for _, item in ipairs(props) do
-        table.insert(out, item.Name)
-    end
-    return out
-end)
-
-local ugc = services["UGCValidationService"]
-add("ishiddenproperty", function(object, property)
-    return ugc:GetPropertyValue(object, property) ~= nil
-end)
-alias({"ishidden"}, function(obj, prop)
-    return ishiddenproperty(obj, prop)
-end)
-
--- return if the property was even hidden
-add("gethiddenproperty", function(object, property)
-    expect(object, "Instance", false, 1)
-    expect(property, "string", false, 2)
-
-    -- fake news, only works for non hidden propertys
-    return ugc:GetPropertyValue(object, property), false
-end)
-
-add("gethiddenproperties", function(object)
-    expect(object, "Instance", false, 1)
-
-    local a = {
-        PredictionMode = Enum.PredictionMode.Automatic,
-        ChatPrivacyMode = Enum.ChatPrivacyMode.NoOne,
-        InternalCharacterAppearanceLoaded = true,
-        FollowUserIdReplicated = 0,
-        CharacterRegionId = {0, 0, -1},
-        AttributesReplicate = "",
-        Attributes = {},
-        CloudEditPlayerActive = true,
-        MembershipTypeReplicate = Enum.MembershipType.None,
-        AttributesSerialize = "",
-        NeedRegionalFallback = false,
-        RawJoinData = "",
-        Tags = {},
-        SuperSafeChatReplicate = false,
-        CountryRegionCodeReplicate = "US",
-        PropertyStatusStudio = Enum.PropertyStatus.Ok,
-        CloudEditCameraCoordinateFrame = {0,0,0,1,0,0,0,1,0,0,0,1},
-        AccountAgeReplicate = 282,
-        MaxSimulationRadius = 0,
-        numExpectedDirectChildren = 0,
-        DefinesCapabilities = false,
-        CameraFrustumRequested = false,
-        HistoryId = "00000000-0000-0000-0000-000000000000"
-    }
-
-    return a
-end)
-
-add("sethiddenproperty", function(object, property, value)
-    expect(object, "Instance", false, 1)
-    expect(property, "string", false, 2)
-    return ugc:SetPropertyValue(object, property, value)
-end)
-
-add("sethiddenprop", function(...)
-    sethiddenproperty(...)
-end)
-
-add("setsimulationradius", function(simrad, maxsimrad)
-    expect(simrad, "number", false, 1)
-    sethiddenproperty(lp, "SimulationRadius", simrad)
-    sethiddenproperty(lp, "MaxSimulationRadius", maxsimrad or simrad)
-end)
-
-add("getsimulationradius", function()
-    return lp.SimulationRadius
-end)
-
-add("gethui", function()
-    return services["Hui"]
-end)
-
--- this is supposed to be like from the memory idk
-add("getinstances", function()
-    local t = {}
-    for _, v in ipairs(game:GetDescendants()) do
-        t[#t + 1] = v:GetFullName()
-    end; table.insert(t, game)
-    return t
-end)
-
--- apparently this is supposed to have 2 args???
-add("getobjects", function()
-    return getinstances()
-end)
-
-local objs = {}
-for _,v in ipairs(game:GetDescendants()) do
-    objs[v] = true
+funcs.compareinstances = function(a, b)
+ if not clonerefs[a] then
+  return a == b
+ else
+  if table.find(clonerefs[a], b) then return true end
+ end
+ return false
 end
 
-add("getnilinstances", function()
-    local nils = {}
+funcs.clonefunction = function(a)
+ assert(type(a)=='function', 'Invalid parameter 1 to \'clonefunction\', function expected got ' .. typeof(a))
 
-    for obj in pairs(objs) do
-        if obj.Parent == nil then
-            table.insert(nils, obj)
+ return function(...)
+  local Copy = Sandbox(a, {}, {}, {}, 0, {...})
+  return Copy.return_value
+ end
+end
+
+funcs.cache.iscached = function(thing)
+ return cache[thing] ~= 'REMOVE' and thing:IsDescendantOf(game) or false -- If it's cache isnt 'REMOVE' and its a des of game (Usually always true) or if its cache is 'REMOVE' then its false.
+end
+funcs.cache.invalidate = function(thing)
+ cache[thing] = 'REMOVE'
+ thing.Parent = nil
+end
+funcs.cache.replace = function(a, b)
+ if cache[a] then
+  cache[a] = b
+ end
+ local n, p = a.Name, a.Parent -- name, parent
+ b.Parent = p
+ b.Name = n
+ a.Parent = nil
+end
+funcs.deepclone = function(a)
+ local Result = {}
+ for i, v in pairs(a) do
+  if type(v) == 'table' then
+    Result[i] = funcs.deepclone(v)
+  end
+  Result[i] = v
+ end
+ return Result
+end
+--[[ The base64 functions were made by https://scriptblox.com/u/yofriendfromschool1 , Credits to him.]]
+funcs.base64.encode = function(data)
+    local letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    return ((data:gsub('.', function(x) 
+        local r,b='',x:byte()
+        for i=8,1,-1 do r=r..(b%2^i-b%2^(i-1)>0 and '1' or '0') end
+        return r;
+    end)..'0000'):gsub('%d%d%d?%d?%d?%d?', function(x)
+        if (#x < 6) then return '' end
+        local c=0
+        for i=1,6 do c=c+(x:sub(i,i)=='1' and 2^(6-i) or 0) end
+        return letters:sub(c+1,c+1)
+    end)..({ '', '==', '=' })[#data%3+1])
+end
+funcs.base64.decode = function(data)
+    local b = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    data = string.gsub(data, '[^'..b..'=]', '')
+    return (data:gsub('.', function(x)
+        if x == '=' then return '' end
+        local r, f = '', (b:find(x) - 1)
+        for i = 6, 1, -1 do
+            r = r .. (f % 2^i - f % 2^(i - 1) > 0 and '1' or '0')
         end
+        return r;
+    end):gsub('%d%d%d?%d?%d?%d?%d?%d?', function(x)
+        if #x ~= 8 then return '' end
+        local c = 0
+        for i = 1, 8 do
+            c = c + (x:sub(i, i) == '1' and 2^(8 - i) or 0)
+        end
+        return string.char(c)
+    end))
+end
+
+funcs.loadstring = function(code)
+ local s1, val1 = pcall(function()
+  return loadstring('local v1=15;v1+=1;return v1')()
+ end)
+ local s2, val2 = pcall(function()
+  return loadstring('local v1={"a"};for i, v in v1 do return v end')()
+ end)
+ if val1 ~= 16 and val2 ~= 'a' then
+  return oldLoader(toluau(code))
+ else
+  return oldLoader(code)
+ end
+end
+funcs.getgenv = getgenv
+funcs.crypt.base64 = funcs.base64
+funcs.crypt.base64encode = funcs.base64.encode
+funcs.crypt.base64decode = funcs.base64.decode
+funcs.crypt.base64_encode = funcs.base64.encode
+funcs.crypt.base64_decode = funcs.base64.decode
+funcs.base64_encode = funcs.base64.encode
+funcs.base64_decode = funcs.base64.decode
+
+funcs.crypt.hex.encode = function(txt)
+ txt = tostring(txt)
+ local hex = ''
+ for i = 1, #txt do
+    hex = hex .. string.format("%02x", string.byte(txt, i))
+ end
+ return hex
+end
+funcs.crypt.hex.decode = function(hex)
+    hex = tostring(hex)
+    local text = ""
+    for i = 1, #hex, 2 do
+        local byte_str = string.sub(hex, i, i+1)
+        local byte = tonumber(byte_str, 16)
+        text = text .. string.char(byte)
     end
-
-    return nils
-end)
-
-add("getnilinstance", function(search)
-    -- search = string
-    for _, item in ipairs(getnilinstances()) do
-        if item == search then
-            return item
-        end
-    end
-end)
-
-local function isScript(obj, includem) -- ~Script
-    local a = false
-    if includem then
-        if obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
-            a = true
-        end
-    else
-        if obj:IsA("LocalScript") then
-            a = true
-        end
-    end
+    return text
+end
+funcs.crypt.url.encode = function(a)
+ return game:GetService("HttpService"):UrlEncode(a)
+end
+funcs.crypt.url.decode = function(a)
+    a = tostring(a)
+    a = string.gsub(a, "+", " ")
+    a = string.gsub(a, "%%(%x%x)", function(hex)
+        return string.char(tonumber(hex, 16))
+    end)
+    a = string.gsub(a, "\r\n", "\n")
     return a
 end
+funcs.crypt.generatekey = function(optionalSize)
+ local key = ''
+ local a = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+ for i = 1, optionalSize or 32 do local n = math.random(1, #a) key = key .. a:sub(n, n) end
+ return funcs.base64.encode(key)
+end
+funcs.crypt.generatebytes = function(size)
+ if type(size) ~= 'number' then return error('missing arguement #1 to \'generatebytes\' (number expected)') end
+ return funcs.crypt.generatekey(size)
+end
+funcs.crypt.encrypt = function(a, b)
+ local result = {}
+ a = tostring(a) b = tostring(b)
+ for i = 1, #a do
+    local byte = string.byte(a, i)
+    local keyByte = string.byte(b, (i - 1) % #b + 1)
+    table.insert(result, string.char(bit32.bxor(byte, keyByte)))
+ end
+ return table.concat(result)
+end
+funcs.crypt.decrypt = funcs.crypt.encrypt
+funcs.crypt.random = function(len)
+ return funcs.crypt.generatekey(len)
+end
 
-local scripts = {}
-game.DescendantAdded:Connect(function(obj)
-    if isScript(obj, true) then
-        scripts[#scripts + 1] = obj
+funcs.isrbxactive = function()
+ return active
+end
+funcs.isgameactive = funcs.isrbxactive
+funcs.gethui = function()
+ local s, H = pcall(function()
+  return game:GetService("CoreGui").RobloxGui
+ end)
+ if H then
+  if not hui.Parent then
+    hui.Parent = H.Parent
+  end
+  return hui
+ else
+  if not hui.Parent then
+    hui.Parent = game:GetService("Players").LocalPlayer.PlayerGui
+  end
+ end
+ return hui
+end
+if getgenv().getrenv and #getgenv().getrenv() == 0 or not getgenv().getrenv then
+ getgenv().getrenv = nil
+ getgenv().getrenv = function() -- Override incognito's getrenv
+  return renv -- couldn't think of a better way to implement it
+ end
+end
+funcs.setclipboard = function(data)
+    repeat task.wait() until ClipboardQueue:Current()[1] == data or ClipboardQueue:IsEmpty()
+    ClipboardQueue:Queue(data)
+    local old = game:GetService("UserInputService"):GetFocusedTextBox()
+    local copy = ClipboardQueue:Current()[1]
+    ClipboardBox:CaptureFocus()
+    ClipboardBox.Text = copy
+    
+    local KeyCode = Enum.KeyCode
+    local Keys = {KeyCode.RightControl, KeyCode.A}
+    local Keys2 = {KeyCode.RightControl, KeyCode.C, KeyCode.V}
+    
+    for _, v in ipairs(Keys) do
+        vim:SendKeyEvent(true, v, false, game)
+        task.wait()
     end
-    objs[obj] = true
-end)
+    for _, v in ipairs(Keys) do
+        vim:SendKeyEvent(false, v, false, game)
+        task.wait()
+    end
+    for _, v in ipairs(Keys2) do
+        vim:SendKeyEvent(true, v, false, game)
+        task.wait()
+    end
+    for _, v in ipairs(Keys2) do
+        vim:SendKeyEvent(false, v, false, game)
+        task.wait()
+    end
+    ClipboardBox.Text = ''
+    if old then old:CaptureFocus() end
+    task.wait(.18)
+    ClipboardQueue:Update()
+end
+funcs.syn.write_clipboard = funcs.setclipboard
+funcs.toclipboard = funcs.setclipboard
+funcs.writeclipboard = funcs.setclipboard
+funcs.setrbxclipboard = funcs.setclipboard
 
-game.DescendantRemoving:Connect(function(obj)
-    objs[obj] = nil
-    for i, v in ipairs(scripts) do
-        if v == obj then
-            table.remove(scripts, i)
-            break
+funcs.isrenderobj = function(thing)
+ return Drawings[thing] ~= nil
+end
+funcs.getrenderproperty = function(thing, prop)
+ return thing[prop]
+end
+funcs.setrenderproperty = function(thing, prop, val)
+ local success, err = pcall(function()
+  thing[prop] = val
+ end)
+ if not success and err then warn(err) end
+end
+
+funcs.syn.protect_gui = function(gui)
+ names[gui] = {name=gui.Name,parent=gui.Parent}
+ protecteduis[gui] = gui
+ gui.Name = funcs.crypt.random(64) -- 64 byte string, removed hashing cuz its useless lmao
+ gui.Parent = gethui()
+end
+funcs.syn.unprotect_gui = function(gui)
+ if names[gui] then gui.Name = names[gui].name gui.Parent = names[gui].parent end protecteduis[gui] = nil
+end
+funcs.syn.protectgui = funcs.syn.protect_gui
+funcs.syn.unprotectgui = funcs.syn.unprotect_gui
+funcs.syn.secure_call = function(func) -- Does not do a secure call, just pcalls it.
+ return pcall(func)
+end
+
+
+funcs.isreadonly = function(tbl)
+ if type(tbl) ~= 'table' then return false end
+ return table.isfrozen(tbl)
+end
+funcs.setreadonly = function(tbl, cond)
+ if cond then
+  table.freeze(tbl)
+ else
+  return funcs.deepclone(tbl)
+ end
+end
+funcs.httpget = function(url)
+ return game:HttpGet(url)
+end
+funcs.httppost = function(url, body, contenttype)
+ return game:HttpPostAsync(url, body, contenttype)
+end
+funcs.request = function(args)
+ local Body = nil
+ local Timeout = 0
+ local function callback(success, body)
+  Body = body
+  Body['Success'] = success
+ end
+ HttpService:RequestInternal(args):Start(callback)
+ while not Body and Timeout < 10 do
+  task.wait(.1)
+  Timeout = Timeout + .1
+ end
+ return Body
+end
+funcs.mouse1click = function(x, y)
+ x = x or 0
+ y = y or 0
+ vim:SendMouseButtonEvent(x, y, 0, true, game, false)
+ task.wait()
+ vim:SendMouseButtonEvent(x, y, 0, false, game, false)
+end
+funcs.mouse2click = function(x, y)
+ x = x or 0
+ y = y or 0
+ vim:SendMouseButtonEvent(x, y, 1, true, game, false)
+ task.wait()
+ vim:SendMouseButtonEvent(x, y, 1, false, game, false)
+end
+funcs.mouse1press = function(x, y)
+ x = x or 0
+ y = y or 0
+ vim:SendMouseButtonEvent(x, y, 0, true, game, false)
+end
+funcs.mouse1release = function(x, y)
+ x = x or 0
+ y = y or 0
+ vim:SendMouseButtonEvent(x, y, 0, false, game, false)
+end
+funcs.mouse2press = function(x, y)
+ x = x or 0
+ y = y or 0
+ vim:SendMouseButtonEvent(x, y, 1, true, game, false)
+end
+funcs.mouse2release = function(x, y)
+ x = x or 0
+ y = y or 0
+ vim:SendMouseButtonEvent(x, y, 1, false, game, false)
+end
+funcs.mousescroll = function(x, y, a)
+ x = x or 0
+ y = y or 0
+ a = a and true or false
+ vim:SendMouseWheelEvent(x, y, a, game)
+end
+funcs.keyclick = function(key)
+ if typeof(key) == 'number' then
+ if not keys[key] then return error("Key "..tostring(key) .. ' not found!') end
+ vim:SendKeyEvent(true, keys[key], false, game)
+ task.wait()
+ vim:SendKeyEvent(false, keys[key], false, game)
+ elseif typeof(Key) == 'EnumItem' then
+  vim:SendKeyEvent(true, key, false, game)
+  task.wait()
+  vim:SendKeyEvent(false, key, false, game)
+ end
+end
+funcs.keypress = function(key)
+ if typeof(key) == 'number' then
+ if not keys[key] then return error("Key "..tostring(key) .. ' not found!') end
+ vim:SendKeyEvent(true, keys[key], false, game)
+ elseif typeof(Key) == 'EnumItem' then
+  vim:SendKeyEvent(true, key, false, game)
+ end
+end
+funcs.keyrelease = function(key)
+ if typeof(key) == 'number' then
+ if not keys[key] then return error("Key "..tostring(key) .. ' not found!') end
+ vim:SendKeyEvent(false, keys[key], false, game)
+ elseif typeof(Key) == 'EnumItem' then
+  vim:SendKeyEvent(false, key, false, game)
+ end
+end
+funcs.mousemoverel = function(relx, rely)
+ local Pos = workspace.CurrentCamera.ViewportSize
+ relx = relx or 0
+ rely = rely or 0
+ local x = Pos.X * relx
+ local y = Pos.Y * rely
+ vim:SendMouseMoveEvent(x, y, game)
+end
+funcs.mousemoveabs = function(x, y)
+ x = x or 0 y = y or 0
+ vim:SendMouseMoveEvent(x, y, game)
+end
+
+funcs.newcclosure = function(f)
+ local a = coroutine.wrap(function(...)
+  local b = {coroutine.yield()}
+  while true do
+   b = {coroutine.yield(f(table.unpack(b)))}
+  end
+ end)
+ a()
+ return a
+end -- Credits to myworld AND EMPER for this
+funcs.iscclosure = function(fnc) return debug.info(fnc, 's') == '[C]' end
+funcs.islclosure = function(func) return not funcs.iscclosure(func) end
+funcs.isexecutorclosure = function(fnc)
+    local found = false
+    for i, v in pairs(getgenv()) do
+     if v == fnc then return true end
+    end
+    for i = 1, math.huge do
+        local s, env = pcall(getfenv, i)
+        if not s or found then break end
+        if type(env) == "table" then
+            for _, v in pairs(env) do
+                if v == fnc then
+                    found = true
+                    break
+                end
+            end
         end
+        if found then break end
     end
-end)
 
-local scriptable = {}
-add("isscriptable", function(obj, prop)
-    expect(obj, "Instance", false, 1)
-    expect(prop, "string", false, 2)
+    return found
+end
+funcs.newlclosure = function(fnc)
+ return function(...) return fnc(...) end
+end
+funcs.clonefunction = funcs.newlclosure
+funcs.is_l_closure = funcs.islclosure
+funcs.is_executor_closure = funcs.isexecutorclosure
+funcs.isourclosure = funcs.isexecutorclosure
+funcs.isexecclosure = funcs.isexecutorclosure
+funcs.checkclosure = funcs.isourclosure
 
-    local res = false
-    for _, item in ipairs(getproperties(obj)) do
-        if item:match(prop) then
-          res = true
-          if table.find(scriptable, prop) then -- also check obj chat
-              res = false
-          end
-        end
+--[[ File system is something i do not know how to implement in roblox lua.
+UPDATE AT 18/5/2024:
+I figured out i can use temp file system with tables.
+]]
+local files = {}
+
+local function startswith(a, b)
+ return a:sub(1, #b) == b
+end
+local function endswith(hello, lo) 
+    return hello:sub(#hello - #lo + 1, #hello) == lo
+end
+
+funcs.writefile = function(path, content)
+ local Path = path:split('/')
+ local CurrentPath = {}
+ for i = 1, #Path do
+  local a = Path[i]
+  CurrentPath[i] = a
+  if not files[a] and i ~= #Path then
+   files[table.concat(CurrentPath, '/')] = {}
+   files[table.concat(CurrentPath, '/') .. '/'] = files[table.concat(CurrentPath, '/')]
+  elseif i == #Path then
+   files[table.concat(CurrentPath, '/')] = tostring(content)
+  end
+ end
+end
+funcs.makefolder = function(path)
+ files[path] = {}
+ files[path .. '/'] = files[path]
+end
+funcs.isfolder = function(path)
+ return type(files[path]) == 'table'
+end
+funcs.isfile = function(path)
+ return type(files[path]) == 'string'
+end
+funcs.readfile = function(path)
+ return files[path]
+end
+funcs.appendfile = function(path, text2)
+ funcs.writefile(path, funcs.readfile(path) .. text2)
+end
+funcs.loadfile = function(path)
+ local content = funcs.readfile(path)
+ if not content then error('File \'' .. tostring(path) .. '\' does not exist.') return '' end
+ local s, func = pcall(function()
+  return loadstring(content)
+ end)
+ return func, not s and func or nil
+end
+funcs.delfolder = function(path)
+ local f = files[path]
+ if type(f) == 'table' then files[path] = nil end
+end
+funcs.delfile = function(path)
+ local f = files[path]
+ if type(f) == 'string' then files[path] = nil end
+end
+funcs.listfiles = function(path)
+    if not path or path == '' then
+     local Files = {}
+     for i, v in pairs(files) do
+      if #i:split('/') == 1 then table.insert(Files, i) end
+     end
+     return Files
     end
-    return res
-end)
+    if type(files[path]) ~= 'table' then return error(path .. ' is not a folder.') end
+    local Files = {}
+    for i, v in pairs(files) do
+      if startswith(i, path .. '/') and not endswith(i, '/') and i ~= path and #i:split('/') == (#path:split('/') + 1) then table.insert(Files, i) end
+    end
+    return Files
+end
 
--- we would have to use getconnecctions to see any refrence to any property .... . . .. . . ..
-add("setscriptable", function(object, property, value)
-    expect(object, "Instance", false, 1)
-    expect(property, "string", false, 2)
-                                      
-    table.insert(scriptable, {object = object, property = property, value = value})
-end)
+funcs.http.request = funcs.request
+funcs.syn.crypt = funcs.crypt
+funcs.syn.crypto = funcs.crypt
+funcs.syn_backup = funcs.syn
 
-add("setrbxclipboard", function(data)
-    expect(data, "string", false, 1)
-end)
 
-local tracked = {} -- highkey needs autoexec or its basically useless
-if hookfunction then
-    local old; old = hookfunction(services["RunService"].BindToRenderStep, function(self, name, priority, fn)
-        tracked[name] = {
-            Function = fn,
-            Priority = priority,
-            FromExecutor = isexecutorclosure(fn) -- or uhm checkcaller
+funcs.getexecutorname = function()
+ return 'MoreUNC', Version
+end
+funcs.identifyexecutor = funcs.getexecutorname
+funcs.http_request = getgenv().request or funcs.request
+funcs.getscripts = function()
+ local a = {};for i, v in pairs(game:GetDescendants()) do if v:IsA("LocalScript") or v:IsA("ModuleScript") then table.insert(a, v) end end return a
+end
+funcs.get_scripts = function()
+ local a = {};for i, v in pairs(game:GetDescendants()) do if v:IsA("LocalScript") or v:IsA("ModuleScript") then table.insert(a, v) end end return a
+end
+funcs.getmodules = function()
+ local a = {};for i, v in pairs(game:GetDescendants()) do if v:IsA("ModuleScript") then table.insert(a, v) end end return a
+end
+funcs.getloadedmodules = funcs.getmodules
+funcs.make_readonly = funcs.setreadonly
+funcs.makereadonly = funcs.setreadonly
+funcs.base64encode = funcs.crypt.base64encode
+funcs.base64decode = funcs.crypt.base64decode
+funcs.clonefunc = funcs.clonefunction
+funcs.setsimulationradius = function(Distance, MaxDistance)
+ local LocalPlayer = game:GetService("Players").LocalPlayer
+ assert(type(Distance)=='number','Invalid arguement #1 to \'setsimulationradius\', Number expected got ' .. type(Distance))
+ LocalPlayer.SimulationRadius = type(Distance) == 'number' and Distance or LocalPlayer.SimulationRadius
+ if MaxDistance then
+  assert(type(MaxDistance)=='number','Invalid arguement #2 to \'setsimulationradius\', Number expected got ' .. type(MaxDistance))
+  LocalPlayer.MaxSimulationDistance = MaxDistance
+ end
+end
+funcs.getinstances = function()
+ return game:GetDescendants()
+end
+funcs.getnilinstances = function()
+ return Instances
+end
+funcs.iswriteable = function(tbl)
+ return not table.isfrozen(tbl)
+end
+funcs.makewriteable = function(tbl)
+ return funcs.setreadonly(tbl, false)
+end
+funcs.isscriptable = function(self, prop)
+ return table.find(Hidden, prop) == nil
+end
+funcs.getrunningscripts = function()
+ local scripts = {}
+ for _, v in pairs(funcs.getinstances()) do
+  if v:IsA("LocalScript") and v.Enabled then table.insert(scripts, v) end
+ end
+ return scripts
+end
+funcs.fireproximityprompt = function(p)
+ local Hold, Distance, Enabled, Thing, CFrame1= p.HoldDuration, p.MaxActivationDistance, p.Enabled, p.RequiresLineOfSight, nil
+ -- Make it activatable from anywhere
+ p.MaxActivationDistance = math.huge
+ -- Make it take 0 seconds to activate
+ p.HoldDuration = 0
+ -- Make it enabled (so you can activate it)
+ p.Enabled = true
+ -- Disable RequiresLineOfSight
+ p.RequiresLineOfSight = false
+ -- Show the thingy
+ local function get()
+  local classes = {'BasePart', 'Part', 'MeshPart'}
+  for _, v in pairs(classes) do
+   if p:FindFirstAncestorOfClass(v) then
+    return p:FindFirstAncestorOfClass(v)
+   end
+  end
+ end
+ local a = get()
+ if not a then
+  local parent = p.Parent
+  p.Parent = Instance.new("Part", workspace)
+  a = p.Parent
+ end
+ CFrame1 = a.CFrame
+ a.CFrame = game:GetService("Players").LocalPlayer.Character.Head.CFrame + game:GetService("Players").LocalPlayer.Character.Head.CFrame.LookVector * 2
+ task.wait()
+ p:InputHoldBegin()
+ task.wait()
+ p:InputHoldEnd()
+ p.HoldDuration = Hold
+ p.MaxActivationDistance = Distance
+ p.Enabled = Enabled
+ p.RequiresLineOfSight = Thing
+ a.CFrame = CFrame1
+ p.Parent = parent or p.Parent
+end
+funcs.firetouchinterest = function(toTouch, TouchWith, on)
+ if on == 0 then return end
+ if toTouch.ClassName == 'TouchTransmitter' then
+   local function get()
+    local classes = {'BasePart', 'Part', 'MeshPart'}
+    for _, v in pairs(classes) do
+    if toTouch:FindFirstAncestorOfClass(v) then
+     return toTouch:FindFirstAncestorOfClass(v)
+    end
+   end
+  end
+  toTouch = get()
+ end
+ local cf = toTouch.CFrame
+ local anc = toTouch.CanCollide
+ toTouch.CanCollide = false
+ toTouch.CFrame = TouchWith.CFrame
+ task.wait()
+ toTouch.CFrame = cf
+ toTouch.CanCollide = anc
+end -- i admit its kinda bad dont fucking attack me
+
+-- SHA256 Hashing
+local function str2hexa(a)return string.gsub(a,".",function(b)return string.format("%02x",string.byte(b))end)end;local function num2s(c,d)local a=""for e=1,d do local f=c%256;a=string.char(f)..a;c=(c-f)/256 end;return a end;local function s232num(a,e)local d=0;for g=e,e+3 do d=d*256+string.byte(a,g)end;return d end;local function preproc(h,i)local j=64-(i+9)%64;i=num2s(8*i,8)h=h.."\128"..string.rep("\0",j)..i;assert(#h%64==0)return h end;local function k(h,e,l)local m={}local n={0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2}for g=1,16 do m[g]=s232num(h,e+(g-1)*4)end;for g=17,64 do local o=m[g-15]local p=bit.bxor(bit.rrotate(o,7),bit.rrotate(o,18),bit.rshift(o,3))o=m[g-2]local q=bit.bxor(bit.rrotate(o,17),bit.rrotate(o,19),bit.rshift(o,10))m[g]=(m[g-16]+p+m[g-7]+q)%2^32 end;local r,s,b,t,u,v,w,x=l[1],l[2],l[3],l[4],l[5],l[6],l[7],l[8]for e=1,64 do local p=bit.bxor(bit.rrotate(r,2),bit.rrotate(r,13),bit.rrotate(r,22))local y=bit.bxor(bit.band(r,s),bit.band(r,b),bit.band(s,b))local z=(p+y)%2^32;local q=bit.bxor(bit.rrotate(u,6),bit.rrotate(u,11),bit.rrotate(u,25))local A=bit.bxor(bit.band(u,v),bit.band(bit.bnot(u),w))local B=(x+q+A+n[e]+m[e])%2^32;x=w;w=v;v=u;u=(t+B)%2^32;t=b;b=s;s=r;r=(B+z)%2^32 end;l[1]=(l[1]+r)%2^32;l[2]=(l[2]+s)%2^32;l[3]=(l[3]+b)%2^32;l[4]=(l[4]+t)%2^32;l[5]=(l[5]+u)%2^32;l[6]=(l[6]+v)%2^32;l[7]=(l[7]+w)%2^32;l[8]=(l[8]+x)%2^32 end;funcs.crypt.hash=function(h)h=preproc(h,#h)local l={0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19}for e=1,#h,64 do k(h,e,l)end;return str2hexa(num2s(l[1],4)..num2s(l[2],4)..num2s(l[3],4)..num2s(l[4],4)..num2s(l[5],4)..num2s(l[6],4)..num2s(l[7],4)..num2s(l[8],4))end
+
+funcs.Drawing.new = function(Type) -- Drawing.new
+    local baseProps = {
+     Visible = false,
+     Color = Color3.new(0,0,0),
+     ClassName = nil
+    }
+    if Type == 'Line' then
+        local a = Instance.new("Frame", Instance.new("ScreenGui", DrawingDict))
+        a.Visible = false
+        a.Size = UDim2.new(0, 0, 0, 0)
+        a.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        a.BackgroundTransparency = 1
+        a.BorderSizePixel = 0
+
+        local meta = baseProps
+        meta.ClassName = Type
+        meta.__index = {
+            Thickness = 1,
+            From = Vector2.new(0, 0),
+            To = Vector2.new(0, 0),
+            Transparency = 0,
+            Remove = function()
+               for i, v in pairs(Drawings) do if v == meta then Drawings[i] = nil end end
+               a:Destroy() 
+            end,
+            Destroy = function()
+               for i, v in pairs(Drawings) do if v == meta then Drawings[i] = nil end end
+               a:Destroy() 
+            end,
+            updateLine = function(self)
+             if not a then return end
+             local from = self.From
+             local to = self.To
+             local distance = (to - from).Magnitude
+             local angle = math.deg(math.atan2(to.Y - from.Y, to.X - from.X))
+
+             a.Size = UDim2.new(0, distance, 0, self.Thickness)
+             a.Position = UDim2.new(0, from.X, 0, from.Y)
+             a.Rotation = angle
+            end
         }
 
-        return old(self, name, priority, fn)
-    end)
-end
-
-add("getrendersteppedlist", function(shouldexec)
-    local output = {}
-
-    for name, data in pairs(tracked) do
-        if shouldexec then
-            output[name] = data -- returns all items
-        else
-            if data.FromExecutor == false then
-                output[name] = data
+        meta.__newindex = function(self, key, value)
+            if not self then return end
+            if key == 'Thickness' and typeof(value) == 'number' then
+                rawset(self, key, value)
+                a.Size = UDim2.new(0, (self.To - self.From).Magnitude, 0, value)
+            elseif key == 'Visible' and typeof(value) == 'boolean' then
+                rawset(self, key, value)
+                a.Visible = value
+            elseif key == 'Color' and typeof(value) == 'Color3' then
+                rawset(self, key, value)
+                a.BackgroundColor3 = value
+            elseif key == 'Transparency' and typeof(value) == 'number' and value <= 1 then
+                rawset(self, key, value)
+                a.BackgroundTransparency = 1 - value
+            elseif key == 'From' and typeof(value) == 'Vector2' then
+                rawset(self, key, value)
+                self:updateLine()
+            elseif key == 'To' and typeof(value) == 'Vector2' then
+                rawset(self, key, value)
+                self:updateLine()
             end
         end
-    end
-    return output
-end)
-
-add("replicatesignal", function(signal)
-    assert(typeof(signal) == "RBXScriptSignal", "expected RBXScriptSignal, got " .. typeof(signal))
-
-    firesignal(signal)
-end)
-
--- Metatable
-
-add("getrawmetatable", function(object)
-    assert(type(object) == "table" or typeof(object) == "Instance", "expected table or Instance, got " .. typeof(object))
-
-    local mt = getmetatable(object)
-
-    if type(mt) == "table" and mt.__metatable ~= nil then
-        local copy = {}
-        for k, v in pairs(mt) do
-            copy[k] = v
-        end
-        copy.__metatable = nil
-        return copy
-    end
-
-    return mt
-end)
-
-add("setrawmetatable", function(object, mt)
-    assert(type(object) == "table" or typeof(object) == "Instance", "expected table or Instance, got " .. typeof(object))
-    expect(mt, "table", false, 2)
-
-    local old = getmetatable(object)
-    if type(old) == "table" then
-        old.__metatable = nil
-    end
-
-    setmetatable(object, mt)
-end)
-
-add("hookmetamethod", function(i, m, f)
-    expect(method, "string", false, 2)
-    expect(hook, "function", false, 3)
-
-    if getrawmetatable then
-        local s = getrawmetatable(i)
-        local o = s[m]
-        if not o then return warn("Method Not Found") end
-        setreadonly(s, false)
-        s[m] = f
-        setreadonly(s, true)
-        return o
-    end
-    return i
-end)
-
-local namecallmethod = nil
-add("getnamecallmethod", function()
-    return namecallmethod
-end)
-
-add("setnamecallmethod", function(method)
-    expect(method, "string", false, 1)
-    namecallmethod = method
-end)
-
-add("isreadonly", function(object)
-    expect(object, "table", false, 1)
-    return table.isfrozen(object)
-end)
-
--- Salood
-local function guard(tbl, readonly)
-    local existing = getmetatable(tbl)
-    if existing then
-        existing.__newindex = function(_, k, v)
-            if readonly then error("attempt to modify a readonly table", 2) end
-            rawset(tbl, k, v)
-        end
-        return tbl
-    end
-
-    local proxy = setmetatable({}, {
-        __index    = tbl,
-        __newindex = function(_, k, v)
-            if readonly then error("attempt to modify a readonly table", 2) end
-            rawset(tbl, k, v)
-        end,
-        __len    = function() return #tbl end,
-        __pairs  = function() return pairs(tbl) end,
-        __ipairs = function() return ipairs(tbl) end,
-    })
-
-    return proxy
-end
-
-add("setreadonly", function(object, readonly)
-    expect(object, "table", false, 1)
-    assert(type(readonly) == "boolean", "expected boolean for readonly, got " .. type(readonly))
-    return guard(object, readonly)
-end)
-
-add("makereadonly", function(object)
-    expect(object, "table", false, 1)
-    return guard(object, true)
-end)
-
-add("makewriteable", function(object)
-    expect(object, "table", false, 1)
-    return guard(object, false)
-end)
-
-local shwid
-add("sethwid", function(input)
-    shwid = input
-end)
-
-alias({"set_hwid", "setmac"}, function(input)
-    return sethwid(input)
-end)
-
-local anal = services["RbxAnalyticsService"]
-add("gethwid", function()
-    return shwid or crypt.hash(anal:GetClientId())
-end)
-
-alias({"get_hwid", "get_user_identifier", "getmac"}, function()
-    return getmac()
-end)
-
-local base = "https://website-iota-ivory-12.vercel.app/code/scripts/unc/sunc/extra/"
-local lz4 = loadstring(game:HttpGet(base .. "lz4/main.luau"))()
-
--- this is not matching up with Potassiums compression
--- idk man
-add("lz4compress", function(data)
-    expect(data, "string", 1)
-    return lz4.compress(data)
-end)
-
-add("lz4decompress", function(data)
-    expect(data, "string", 1)
-    return lz4.decompress(data)
-end)
-
--- https://github.com/kennyledet/Algorithm-Implementations -- the goat
-local rle = loadstring(game:HttpGet(base .. "rle/main.luau"))()
-
-add("rlecompress", function(data)
-    expect(data, "string", 1)
-    return rle.encode(data)
-end)
-
-add("rledecompress", function(data)
-    expect(data, "string", 1)
-    return rle.decode(data)
-end)
-
-local mboxParent = Instance.new("Folder", services["CoreGui"])
-mboxParent.Name = rstring(6)
-
-add("messagebox", function(text: string, caption: string, flags: number): number
-    expect(text, "string", false, 1)
-    expect(caption, "string", false, 2)
-    expect(flags, "number", false, 3)
-
-    if allow() then
-        local ps = string.format(
-            [[powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('%s','%s',%d) | Out-Null"]],
-            text:gsub("'", "''"),
-            caption:gsub("'", "''"),
-            flags
-        )
-        powerexec(ps)
-    else       
-        local gui = Instance.new("ScreenGui")
-        gui.Name = tostring(math.random(1e4, 1e5))
-        gui.Parent = mboxParent
-
-        local window = Instance.new("Frame")
-        window.Size = UDim2.fromOffset(349, 151)
-        window.Position = UDim2.new(0.5, -174, 0.5, -75)
-        window.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        window.Draggable = true
-        window.BorderSizePixel = 0
-        window.ClipsDescendants = true
-        window.Parent = gui
-
-        local wc = Instance.new("UICorner", window)
-        wc.CornerRadius = UDim.new(0, 8)
-
-        local strip = Instance.new("Frame")
-        strip.Size = UDim2.fromOffset(349, 35)
-        strip.Position = UDim2.fromOffset(0, 0)
-        strip.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
-        strip.BorderSizePixel = 0
-        strip.ClipsDescendants = true
-        strip.Parent = window
-
-        Instance.new("UICorner", strip).CornerRadius = wc.CornerRadius
-
-        local title = Instance.new("TextLabel")
-        title.Size = UDim2.fromOffset(260, 18)
-        title.Position = UDim2.fromOffset(14, 10)
-        title.BackgroundTransparency = 1
-        title.Text = caption
-        title.Font = Enum.Font.SourceSans
-        title.TextSize = 16
-        title.TextColor3 = Color3.fromRGB(0, 0, 0)
-        title.TextXAlignment = Enum.TextXAlignment.Left
-        title.Parent = window
-
-        local close = Instance.new("TextButton")
-        close.Size = UDim2.fromOffset(20, 20)
-        close.Position = UDim2.fromOffset(321, 8)
-        close.Text = "X"
-        close.Font = Enum.Font.SourceSansBold
-        close.TextSize = 16
-        close.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        close.BackgroundTransparency = 0.8
-        close.TextColor3 = Color3.fromRGB(0, 0, 0)
-        close.Parent = window
-
-        close.MouseButton1Click:Connect(function() gui:Destroy() end)
-        close.MouseEnter:Connect(function() close.BackgroundColor3 = Color3.fromRGB(255, 0, 0) end)
-        close.MouseLeave:Connect(function() close.BackgroundColor3 = Color3.fromRGB(255, 255, 255) end)
-
-        local msg = Instance.new("TextLabel")
-        msg.Size = UDim2.fromOffset(250, 20)
-        msg.Position = UDim2.fromOffset(54, 58)
-        msg.BackgroundTransparency = 1
-        msg.Text = text
-        msg.Font = Enum.Font.SourceSans
-        msg.TextSize = 14
-        msg.TextColor3 = Color3.fromRGB(0, 0, 0)
-        msg.TextXAlignment = Enum.TextXAlignment.Left
-        msg.Parent = window
-
-        local strip2 = Instance.new("Frame")
-        strip2.Size = UDim2.fromOffset(349, 38)
-        strip2.Position = UDim2.fromOffset(0, window.Size.Y.Offset - 38)
-        strip2.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
-        strip2.BorderSizePixel = 0
-        strip2.ClipsDescendants = true
-        strip2.Parent = window
-
-        local s2c = Instance.new("UICorner")
-        s2c.CornerRadius = wc.CornerRadius
-        s2c.Parent = strip2
-
-        local function createBtn(btnText, pos)
-            local btn = Instance.new("TextButton")
-            btn.Size = UDim2.fromOffset(72, 26)
-            btn.Position = UDim2.fromOffset(pos, 5.8)
-            btn.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
-            btn.Text = btnText
-            btn.Font = Enum.Font.SourceSans
-            btn.TextSize = 14
-            btn.TextColor3 = Color3.fromRGB(0, 0, 0)
-            btn.ClipsDescendants = true
-            btn.Parent = strip2
-
-            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-
-            local stroke = Instance.new("UIStroke", btn)
-            stroke.Color = Color3.fromRGB(200, 200, 200)
-            stroke.Thickness = 1
-            stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-
-            return btn
-        end
-
-        local ok = createBtn("OK", 263)
-        ok.MouseButton1Click:Connect(function() gui:Destroy() end)
-    end
-end)
-
-add("messageboxasync", function(...)
-    messagebox(...)
-end)
-
-local oqueue = ""
-add("queue_on_teleport", function(code)
-    expect(code, "string", false, 1)
-    oqueue = code
-end)
-
-add("get_queued_teleport", function()
-    return oqueue
-end)
-
-add("reset_queuedteleport", function()
-    oqueue = ""
-end)
-
-add("request", function(options)
-    expect(options, "table", false, 1)
-    local url = options.Url
-    assert(type(url) == "string" and #url > 0, "expected non-empty string for Url")
-
-    local method = (options.Method or "GET"):upper()
-    local body = options.Body or ""
-
-    local success, result = pcall(function()
-        if method == "GET" then
-            return game:HttpGet(url, true)
-        elseif method == "POST" then
-            return game:HttpPost(url, body, Enum.HttpContentType.ApplicationUrlEncoded)
-        else
-            error("Unsupported method: " .. method)
-        end
-    end)
-
-    return {
-        StatusCode = success and 200 or 500,
-        Body = success and result or tostring(result),
-        Headers = {},
-    }
-end)
-
-add("httpget", function(self: any?, url: string): string
-    if typeof(self) == "string" then
-        url = self
-    end
-
-    expect(url, "string", false, 1)
-    
-    return game:HttpGetAsync(url)
-end)
-
-add("getinternalparent", function(instance)
-    expect(instance, "Instance", false, 1)
-    return instance.Parent
-end)
-
-add("setinternalparent", function(instance, newparent)
-    expect(instance, "Instance", false, 1)
-    assert(typeof(newparent) == "Instance" or newparent == nil, "expected Instance or nil for newparent")
-    instance.Parent = newparent
-end)
-
--- UserSettings():IsUserFeatureEnabled(u1)
-add("getfflag", function(fflag)
-    expect(fflag, "string", false, 1)
-    return game:GetFastFlag(fflag:gsub("^FFlag", ""))
-end)
-
-add("setfflag", function(fflag, value)
-    expect(fflag, "string", false, 1)
-    expect(value, "string", false, 2)
-    game:SetFastFlag(fflag:gsub("^FFlag", ""), value)
-end)
-
-add("setclipboard", function(text)
-    expect(text, "string", false, 1)
-    print(text)
-end)
-
-local fps = workspace:GetRealPhysicsFPS()
-add("setfpscap", function(f)
-    expect(f, "number", false, 1)
-    assert(f > 0, "fps cap must be greater than 0")
-    fps = f
-end)
-
-add("getfpscap", function()
-    return fps
-end)
-
-add("getping", function()
-    return services["Stats"].FrameRateManager["AverageFPS"]:GetValue()
-end)
-
-add("getfps", function()
-    local fps2 = 0; local last = tick()
-    
-    services["RunService"].RenderStepped:Wait()
-    fps2 = 1 / (tick() - last)
-    
-    return math.floor(fps2)
-end)
-
--- thanks https://scriptblox.com/u/Salood
-add("getplatform", function() 
-    return services["UserInputService"]:GetPlatform():split(".")[3]
-end)
-
-add("playanimation", function(animation)
-    if animation:find("rbxassetid") then
-        animation = animation
-    else
-        animation = "rbxassetid://" .. animation
-    end
-
-    local hum = _raknet.GetHumanoid()
-    hum:LoadAnimation(animation):Play()
-end)
-add("runanimation", function(anim)
-    playanimation(anim)
-end)
-
--- limited to actual math.pi but ya
-add("pi", function(wanted)
-    local str = tostring(math.pi)
-    local output = {}
-
-    for i = 1, wanted do
-        local char = str:sub(i, i)
-        if char == "" then break end
-        table.insert(output, char)
-    end
-
-    return table.concat(output)
-end)
-
--- Encoding -- useless
-
-add("base64encode", function(data)
-    return crypt.base64encode(data)
-end)
-
-add("base64decode", function(data)
-    return crypt.base64decode(data)
-end)
-
--- Scripts
-
-add("getscriptclosure", function(scr)
-    expect(scr, "Instance", false, 1)
-    assert(scr:IsA("ModuleScript"), "expected ModuleScript, got " .. scr.ClassName)
-    return function(...)
-        return require(scr)(...)
-    end
-end)
-
--- could hookmetamethod it or some shit
-add("getscriptfromthread", function()
-    return Instance.new("LocalScript", nil)
-end)
-
-add("getscriptthread", function()
-    return coroutine.running()
-end)
--- no clue
-add("getallthreads", function()
-    return table.create(math.random(1, 32), coroutine.running())
-end)
-
-add("getscriptbytecode", function(item)
-    expect(item, "Instance", false, 1)
-    return ""
-end)
-add("dumpstring", function(item)
-    return getscriptbytecode(item)
-end)
-
-add("decompile", function(item)
-    expect(item, "Instance", false, 1)
-
-    return request({
-        Url = "http://api.plusgiant5.com/konstant/decompile",
-        Method = "POST",
-        Headers = {
-            ["Content-Type"] = "text/plain"
-        },
-        Body = getscriptbytecode(item)
-    }).Body
-end)
-
--- hash a functions BYTECODE and string.dump doesnt exist so
-add("getfunctionhash", function(item)
-    expect(item, "function", false, 1)
-    return crypt.hash(item, "sha384")
-end)
-
-local synsaveinstance = loadstring(game:HttpGet("https://raw.githubusercontent.com/luau/UniversalSynSaveInstance/main/saveinstance.luau", true), "saveinstance")()
-local options = {
-    ReadMe = true,
-    IsolatePlayers = true,
-    FilePath = string.format("%d", tick())
-}
-add("saveinstance", function(opts)
-    if not opts then opts = options end
-    synsaveinstance(opts)
-end)
-add("saveplace", function()
-    saveinstance()
-end)
-
-for _, v in ipairs(game:GetDescendants()) do
-    if isScript(v, true) then
-        scripts[#scripts + 1] = v
-    end
-end
-
-add("getrunningscripts", function()
-    local out = {}
-    for _, item in ipairs(scripts) do
-        if isScript(item, false) then
-            out[#out + 1] = item
-        end
-    end
-    return out
-end)
-
-add("getscripts", function()
-    return scripts
-end)
-
--- update getloaded modules to return
---[[
-{
-    the_module_name = {
-        game:GetService("ReplicatedStorage").Modules.Money, -- its source
-        required {
-            -- what BaseScripts have required it
+        local meta1 = setmetatable({}, meta)
+        Drawings[meta1] = meta1
+        return meta1
+    elseif Type == 'Square' then
+        local a = Instance.new("Frame", DrawingDict)
+        a.Visible = false
+        a.Size = UDim2.new(0, 0, 0, 0)
+        a.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        a.BackgroundTransparency = 1
+        a.BorderSizePixel = 0
+        local b = Instance.new("UIStroke", a)
+        b.Color = Color3.fromRGB(255, 255, 255)
+        b.Enabled = true
+
+        local meta = baseProps
+        meta.ClassName = Type
+        meta.__index = {
+            Size = Vector2.new(0,0),
+            Position = Vector2.new(0, 0),
+            Remove = function()
+               for i, v in pairs(Drawings) do if v == meta then Drawings[i] = nil end end
+               a:Destroy() 
+            end,
+            Destroy = function()
+               for i, v in pairs(Drawings) do if v == meta then Drawings[i] = nil end end
+               a:Destroy() 
+            end,
+            updateSquare = function(self)
+             if not a then return end
+             a.Size = UDim2.new(0, self.Size.X, 0, self.Size.Y)
+             a.Position = UDim2.new(0, self.Position.X, 0, self.Position.Y)
+            end
         }
-    }
-}
---]]
 
-add("getloadedmodules", function()
-    local modules = {}
-    for _, s in ipairs(scripts) do
-        if s:IsA("ModuleScript") then
-            modules[#modules + 1] = s
+        meta.__newindex = function(self, key, value)
+            if not self then return end
+            if key == 'Filled' and typeof(value) == 'boolean' then
+                rawset(self, key, value)
+                b.Enabled = not value
+                a.BackgroundTransparency = value and 0 or 1
+            elseif key == 'Visible' and typeof(value) == 'boolean' then
+                rawset(self, key, value)
+                a.Visible = value
+            elseif key == 'Color' and typeof(value) == 'Color3' then
+                rawset(self, key, value)
+                a.BackgroundColor3 = value
+                b.Color = value
+            elseif key == 'Position' and typeof(value) == 'Vector2' then
+                rawset(self, key, value)
+                self:updateSquare()
+            elseif key == 'Size' and typeof(value) == 'Vector2' then
+                rawset(self, key, value)
+                self:updateSquare()
+            end
         end
-    end
-    return modules
-end)
+        local meta1 = setmetatable({}, meta)
+        Drawings[meta1] = meta1
+        return meta1
+    elseif Type == 'Circle' then
+        local a = Instance.new("Frame", Instance.new("ScreenGui", DrawingDict))
+        a.Visible = false
+        a.Size = UDim2.new(0, 0, 0, 0)
+        a.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        a.BackgroundTransparency = 1
+        a.BorderSizePixel = 0
+        local b = Instance.new("UIStroke", a)
+        b.Color = Color3.fromRGB(255, 255, 255)
+        b.Enabled = false
+        b.Thickness = 1
+        local c = Instance.new("UICorner", a)
+        c.CornerRadius = UDim.new(1, 0)
 
-add("isrequired", function(module)
-    assert(typeof(module) == "Instance" and module:IsA("ModuleScript"), "expected ModuleScript, got " .. typeof(module))
+        local meta = baseProps
+        meta.ClassName = Type
+        meta.__index = {
+            Thickness = 1,
+            Filled = false,
+            NumSides = 0,
+            Radius = 1,
+            Position = Vector2.new(0, 0),
+            Transparency = 0,
+            Remove = function()
+               for i, v in pairs(Drawings) do if v == meta then Drawings[i] = nil end end
+               a:Destroy() 
+            end,
+            Destroy = function()
+               for i, v in pairs(Drawings) do if v == meta then Drawings[i] = nil end end
+               a:Destroy() 
+            end,
+            updateCircle = function(self)
+             if not b or not a then return end
+             a.Size = UDim2.new(0, self.Radius, 0, self.Radius)
+             a.Position = UDim2.new(0, self.Position.X, 0, self.Position.Y)
+             b.Enabled = not self
+             b.Color = self.Color
+            end
+        }
 
-    local loaded = getloadedmodules()
-    for _, item in ipairs(loaded) do
-        if item == module then
-            return true
+        meta.__newindex = function(self, key, value)
+            if not self then return end
+            if key == 'Thickness' and typeof(value) == 'number' then
+                rawset(self, key, value)
+                b.Thickness = value
+            elseif key == 'Visible' and typeof(value) == 'boolean' then
+                rawset(self, key, value)
+                a.Visible = value
+            elseif key == 'Color' and typeof(value) == 'Color3' then
+                rawset(self, key, value)
+                a.BackgroundColor3 = value
+                a.Color = value
+            elseif key == 'Transparency' and typeof(value) == 'number' then
+                rawset(self, key, value)
+                a.BackgroundTransparency = 1 - value
+            elseif key == 'Position' and typeof(value) == 'Vector2' then
+                rawset(self, key, value)
+                self:updateCircle()
+            elseif key == 'Radius' and typeof(value) == 'number' then
+                rawset(self, key, value)
+                self:updateCircle()
+            elseif key == 'NumSides' and typeof(value) == 'number' then
+                rawset(self, key, value)
+            elseif key == 'Filled' and typeof(value) == 'boolean' then
+                rawset(self, key, value)
+                self:updateCircle()
+            end
         end
-    end
-    return false
-end)
-add("isloadedmodule", function(module)
-    return isrequired(module)
-end)
+        local meta1 = setmetatable({}, meta)
+        Drawings[meta1] = meta1
+        return meta1
+    elseif Type == 'Text' then
+        local a = Instance.new("TextLabel", DrawingDict)
+        a.Visible = false
+        a.Size = UDim2.new(0, 0, 0, 0)
+        a.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        a.BackgroundTransparency = 1
+        a.BorderSizePixel = 0
+        a.TextStrokeColor3 = Color3.new(0,0,0)
+        a.TextStrokeTransparency = 1
 
-add("getdeletedactors", function()
-    local del_actors = {}
+        local meta = baseProps
+        meta.ClassName = Type
+        meta.__index = {
+            Text = '',
+            Transparency = 0,
+            Size = 0,
+            Center = false,
+            Outline = false,
+            OutlineColor = Color3.new(0,0,0),
+            Position = Vector2.new(0,0),
+            Font = 3,
+            Remove = function()
+               for i, v in pairs(Drawings) do if v == meta then Drawings[i] = nil end end
+               a:Destroy() 
+            end,
+            Destroy = function()
+               for i, v in pairs(Drawings) do if v == meta then Drawings[i] = nil end end
+               a:Destroy() 
+            end,
+            updateText = function(self)
+             if not a then return end
+             a.TextScaled = true
+             a.Size = UDim2.new(0, self.Size * 3, 0, self.Size / 2)
+             a.Position = UDim2.new(0, self.Position.X, 0, self.Position.Y)
+             a.Text = self.Text
+             a.Font = Fonts[self.Font]
+             a.Visible = self.Visible
+             a.TextColor3 = self.Color
+             a.TextTransparency = 1 - self.Transparency
+             a.BorderSizePixel = self.Outline and 1 or 0
+             if self.Center then
+              a.TextXAlignment = Enum.TextXAlignment.Center
+              a.TextYAlignment = Enum.TextYAlignment.Center
+             else
+              a.TextXAlignment = Enum.TextXAlignment.Left
+              a.TextYAlignment = Enum.TextYAlignment.Top
+             end
+             a.TextStrokeTransparency = self.Outline and 0 or 1
+             a.TextStrokeColor3 = self.OutlineColor
+            end
+        }
 
-    for _, item in ipairs(getnilinstances()) do
-        if item:IsA("Actor") then
-            table.insert(del_actors, item)
+        meta.__newindex = function(self, key, value)
+            if not self then return end
+            if key == 'Text' and typeof(value) == 'string' then
+                rawset(self, key, value)
+            elseif key == 'Visible' and typeof(value) == 'boolean' then
+                rawset(self, key, value)
+                a.Visible = value
+            elseif key == 'Color' and typeof(value) == 'Color3' then
+                rawset(self, key, value)
+            elseif key == 'Transparency' and typeof(value) == 'number' then
+                rawset(self, key, value)
+            elseif key == 'Position' and typeof(value) == 'Vector2' then
+                rawset(self, key, value)
+            elseif key == 'Size' and typeof(value) == 'number' then
+                rawset(self, key, value)
+            elseif key == 'Outline' and typeof(value) == 'boolean' then
+                rawset(self, key, value)
+            elseif key == 'Center' and typeof(value) == 'boolean' then
+                rawset(self, key, value)
+            elseif key == 'OutlineColor' and typeof(value) == 'Color3' then
+                rawset(self, key, value)
+            elseif key == 'Font' and typeof(value) == 'number' then
+                rawset(self, key, value)
+            end
+            self:updateText()
         end
-    end
-    return del_actors
-end)
 
-add("getremotes", function()
-    local remotes = {}
-    for _, obj in ipairs(game:GetDescendants()) do
-        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-            table.insert(remotes, obj)
+        local meta1 = setmetatable({}, meta)
+        Drawings[meta1] = meta1
+        return meta1
+    elseif Type == 'Image' then
+        local a = Instance.new("ImageLabel", DrawingDict)
+        a.Visible = false
+        a.Size = UDim2.new(0, 0, 0, 0)
+        a.ImageColor3 = Color3.fromRGB(255,255,255)
+        a.BackgroundTransparency = 1
+        a.BorderSizePixel = 0
+
+        local meta = baseProps
+        meta.ClassName = 'Image'
+        meta.__index = {
+            Text = '',
+            Transparency = 0,
+            Size = Vector2.new(0, 0),
+            Position = Vector2.new(0,0),
+            Color = Color3.fromRGB(255, 255, 255),
+            Image = '',
+            Remove = function()
+               for i, v in pairs(Drawings) do if v == meta then Drawings[i] = nil end end
+               a:Destroy()
+            end,
+            Destroy = function()
+               for i, v in pairs(Drawings) do
+                if v == meta then Drawings[i] = nil end
+               end
+               a:Destroy()
+            end,
+            updateImage = function(self)
+             if not a then return end
+             a.Size = UDim2.new(0, self.Size.X, 0, self.Size.Y)
+             a.Position = UDim2.new(0, self.Position.X, 0, self.Position.Y)
+             a.Visible = self.Visible
+             a.ImageColor3 = self.Color
+             a.ImageTransparency = 1 - self.Transparency
+             a.BorderSizePixel = self.Outline and 1 or 0
+             a.Image = self.Image
+            end
+        }
+
+        meta.__newindex = function(self, key, value)
+            if not self then return end
+            if key == 'Visible' and typeof(value) == 'boolean' then
+                rawset(self, key, value)
+            elseif key == 'Color' and typeof(value) == 'Color3' then
+                rawset(self, key, value)
+            elseif key == 'Transparency' and typeof(value) == 'number' then
+                rawset(self, key, value)
+            elseif key == 'Position' and typeof(value) == 'Vector2' then
+                rawset(self, key, value)
+            elseif key == 'Size' and typeof(value) == 'number' then
+                rawset(self, key, value)
+            elseif key == 'Image' and typeof(value) == 'string' then
+                rawset(self, key, value)
+            else
+             return
+            end
+            self:updateImage()
         end
+
+        local meta1 = setmetatable({}, meta)
+        Drawings[meta1] = meta1
+        return meta1
     end
-    return remotes
-end)
-
-add("hookremote", function(remote, hook)
-    expect(remote, "Instance", false, 1)
-    assert(remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction"), "expected RemoteEvent or RemoteFunction")
-    expect(hook, "function", false, 2)
-    
-    local oldn
-    oldn = hookmetamethod(game, "__namecall", function(self, ...)
-        local method = getnamecallmethod()
-        
-        if self == remote and (method == "FireServer" or method == "InvokeServer") then
-            return hook(...)
-        end
-        
-        return oldn(self, ...)
-    end)
-    
-    return oldn
-end)
-
-local trgr, trgc = {}, {}
-
-local function track(obj)
-    if type(obj) == "table" or type(obj) == "function" or type(obj) == "thread" or type(obj) == "userdata" then
-        trgr[#trgr + 1] = obj
-        trgc[#trgc + 1] = obj
-    end
-    return obj
 end
 
--- random error idk
-local function nan(value) return type(value) == "number" and value ~= value end
-local function sr(root, seen)
-    if root == nil or nan(root) then return end
-
-    seen = seen or {}
-    if seen[root] then return end
-    seen[root] = true
-
-    if type(root) == "table" then
-        track(root)
-
-        for key, value in pairs(root) do
-            if not nan(key) then
-                sr(key, seen)
-            end
-            if not nan(value) then
-                sr(value, seen)
-            end
-        end
-
-        local metatable = getmetatable(root)
-        if metatable then
-            sr(metatable, seen)
-        end
-
-    elseif type(root) == "function" then
-        track(root)
-
-        local index = 1
-        while true do
-            local success, name, upvalue = pcall(debug.getupvalue, root, index)
-            if not success or not name then break end
-
-            if not nan(upvalue) then
-                sr(upvalue, seen)
-            end
-
-            index += 1
-        end
-
-    elseif type(root) == "thread" or type(root) == "userdata" then
-        track(root)
-    end
+funcs.randomstring = funcs.crypt.random
+funcs.getprotecteduis = function()
+ return protecteduis
 end
-
-sr(getgenv())
-
-add("getreg", function()
-    return trgr
-end)
-
-add("getgc", function()
-    return trgc
-end)
-
-add("filtergc", function(type, filter_options, return_one)
-    local matches = {}
-    if type == "table" then
-        for i,v in getgc(true) do
-            if typeof(v) ~= "table" then continue end
-            local passed = true
-            if filter_options ~= nil then
-                if typeof(filter_options.Keys) == "table" and passed then
-                    for _, key in filter_options.Keys do
-                        if rawget(v, key) == nil then passed = false break end
-                    end
-                end
-                if typeof(filter_options.Values) == "table" and passed then
-                    local tableVals = {}
-                    for _,value in next, v do table.insert(tableVals, value) end
-                    for _, value in filter_options.Values do
-                        if not table.find(tableVals, value) then passed = false break end
-                    end
-                end
-                if typeof(filter_options.KeyValuePairs) == "table" and passed then
-                    for key, value in filter_options.KeyValuePairs do
-                        if rawget(v, key) ~= value then passed = false break end
-                    end
-                end
-                if typeof(filter_options.Metatable) == "table" and passed then
-                    passed = filter_options.Metatable == getrawmetatable(v)
-                end
-                if not passed then continue end
-            end
-            if return_one and passed then return v elseif passed then table.insert(matches, v) end
-        end
-    elseif type == "function" then
-        if filter_options.IgnoreExecutor == nil then filter_options.IgnoreExecutor = true end
-        for i,v in getgc(false) do
-            if typeof(v) ~= "function" then continue end
-            local passed = true
-            if filter_options ~= nil then
-                if filter_options.Name and passed then passed = debug.info(v, "n") == filter_options.Name end
-                if filter_options.IgnoreExecutor == true and passed then passed = isexecutorclosure(v) == false end
-                if iscclosure(v) and (typeof(filter_options.Hash) == "string" or typeof(filter_options.Constants) == "table") then passed = false end
-                if iscclosure(v) == false and passed then
-                    if typeof(filter_options.Hash) == "string" and passed then passed = getfunctionhash(v) == filter_options.Hash end
-                    if typeof(filter_options.Constants) == "table" and passed then
-                        local funcConsts = {}
-                        for idx, constant in debug.getconstants(v) do
-                            if constant ~= nil then table.insert(funcConsts, constant) end
-                        end
-                        for _, constant in filter_options.Constants do
-                            if not table.find(funcConsts, constant) then passed = false break end
-                        end
-                    end
-                end
-                if typeof(filter_options.Upvalues) == "table" and passed then
-                    local funcUpvals = {}
-                    for idx, upval in debug.getupvalues(v) do
-                        if upval ~= nil then table.insert(funcUpvals, upval) end
-                    end
-                    for _, upval in filter_options.Upvalues do
-                        if not table.find(funcUpvals, upval) then passed = false break end
-                    end
-                end
-                if not passed then continue end
-            end
-            if return_one and passed then return v elseif passed then table.insert(matches, v) end
-        end
-    else
-        error(debug.traceback(`Expected type 'function' or 'table' (got '{type}')`, 2))
-    end
-    return return_one ~= true and matches or nil
-end)
-
-local renv = {game, DockWidgetPluginGuiInfo,warn,tostring,gcinfo,os,tick,task,getfenv,debug,NumberSequence,assert,rawlen,wait,Color3,Enum,Delay,OverlapParams,Path2DControlPoint,SecurityCapabilities,_G,AdReward,UserSettings,shared,Faces,error,coroutine,string,NumberRange,buffer,PhysicalProperties,Instance,printidentity,PluginManager,FloatCurveKey,delay,Ray,NumberSequenceKeypoint,Version,Vector2,newproxy,Game,Content,spawn,rawget,stats,xpcall,ColorSequence,Vector2int16,Workspace,print,SharedTable,typeof,UDim2,RaycastParams,unpack,TweenInfo,loadstring,require,Vector3,pairs,Vector3int16,setmetatable,elapsedTime,pcall,bit32,DateTime,ipairs,table,workspace,version,Region3int16,collectgarbage,game,getmetatable,Spawn,UDim,Region3,utf8,_VERSION,CFrame,rawset,PathWaypoint,CellId,Font,PluginDrag,settings,rawequal,math,CatalogSearchParams,Random,ValueCurveKey,ypcall,type,next,ElapsedTime,select,tonumber,Stats,Wait,time,Rect,BrickColor,setfenv,vector,Axes,ColorSequenceKeypoint,RotationCurveKey}
-add("getrenv", function()
-    return renv
-end)
-
-add("getgenv", function()
-    return getfenv(0)
-end)
-
-add("dumpenv", function()
-    local result = {}
-
-    for k, v in pairs(getgenv()) do
-        if typeof(v) == "table" then
-            local sub = {}
-            for subk, subv in pairs(v) do
-                sub[subk] = subv
-            end
-            result[k] = sub
-        else
-            result[k] = v
-        end
-    end
-
-    return result
-end)
-
--- Idk what to name it so like
-add("printenv", function(docs: bool): bool
-    -- TODO: docs would also print the documenation or rather a brief explanation of the function
-    local env = dumpenv()
-    for k, v in pairs(env) do
-        print(k, translate(v))
-        if typeof(v) == "table" then
-            for subk, subv in pairs(v) do
-                print('\t', subk, translate(subv))
-            end
-        end
-    end
-end)
-
-add("getsenv", function(scr)
-    assert(typeof(scr) == "Instance" and scr:IsA("LocalScript"), "expected LocalScript, got " .. typeof(scr))
-    return getfenv(0)
-end)
-
-local function test()
-    local function try(f)
-        return function()
-            return select(1, pcall(f))
-        end
-    end
-
-    local checks = {
-        try(function() return game.Name end),
-        try(function() return services["CoreGui"].Name end),
-        try(function() return game.DataCost end),
-        try(function() return Instance.new("Player") end),
-        try(function() return services["CorePackages"].Name end),
-        try(function() return Instance.new("SurfaceAppearance") end),
-        try(function() Instance.new("MeshPart").MeshId = "" end)
-    }
-
-    for i, v in ipairs(checks) do
-        if not v() then
-            return i - 1
-        end
-    end
-
-    return #checks
+funcs.getprotectedguis = funcs.getprotecteduis
+funcs.cleardrawcache = function()
+ for _, v in pairs(Drawings) do
+  v:Remove()
+ end
+ table.clear(Drawings)
 end
-
-local thread_identity = 1
-add("getthreadidentity", function()
-    if thread_identity == 1 then
-        return test()
-    end
-    return thread_identity
-end)
-
-add("setthreadidentity", function(identity)
-    expect(identity, "number", false, 1)
-    thread_identity = identity
-end)
-
-add("setidentity", function(identity)
-    expect(identity, "number", false, 1)
-    setthreadidentity(identity)
-end)
-add("getidentity", function()
-    return getthreadidentity()
-end)
-add("getthreadcontext", function()
-    return getthreadidentity()
-end)
-add("getthreadcaps", function()
-    return getthreadidentity()
-end)
-add("identity", function() -- just added this for testing
-   return getthreadidentity()
-end)
-
-add("printidentity", function()
-   print("Current identity is", getthreadidentity())
-end)
-
--- WebSocket
-
-add("WebSocket", {})
-
-add("WebSocket.connect", function(url)
-    local self = {}
-
-    self.Url = url
-    self._open = true
-
-    self.OnMessage = createBindable()
-    self.OnClose = createBindable()
-
-    function self:Send(message)
-        if not self._open then
-            warn("WebSocket is closed")
-            return
-        end
-        do end
-    end
-
-    function self:Close()
-        if not self._open then return end
-
-        self._open = false
-        print("[WebSocket:Closed]", self.Url)
-
-        self.OnClose:Fire()
-    end
-
-    task.defer(function()
-        if self._open then
-            self.OnMessage:Fire("[connected] " .. url)
+funcs.checkcaller = function()
+ local info = debug.info(getgenv, 'slnaf')
+ return debug.info(1, 'slnaf')==info
+end
+funcs.getthreadcontext = function() -- funny little way of getting this
+ if coroutine.isyieldable(coroutine.running()) then -- check if u can use task.wait or not
+  QueueGetIdentity()
+  task.wait(.1)
+  return tonumber(Identity)
+ else
+  if Identity == -1 then
+   task.spawn(QueueGetIdentity)
+   return 1
+  else
+   return tonumber(Identity)
+  end
+  return tonumber(Identity)
+ end
+end
+funcs.getthreadidentity = funcs.getthreadcontext
+funcs.getidentity = funcs.getthreadcontext
+funcs.rconsolecreate = function()
+    local Clone = Console:Clone()
+    Clone.Parent = gethui()
+    ConsoleClone = Clone
+    ConsoleClone.ConsoleFrame.Topbar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            startDrag(input, ConsoleClone.ConsoleFrame)
         end
     end)
+end
+funcs.rconsoledestroy = function()
+    if ConsoleClone then ConsoleClone:Destroy() end
+    ConsoleClone = nil
+end
+funcs.rconsoleprint = function(msg, cc)
+    local CONSOLE = ConsoleClone or Console
+	repeat task.wait() until ConsoleQueue:IsEmpty()
+	msg = tostring(msg)
+	local last_color = nil
 
-    return self
-end)
+	msg = msg:gsub('@@(%a+)@@', function(color)
+		local colorName = color:upper()
+		local rgbColor = colors[colorName]
+		if rgbColor then
+			local fontTag = string.format('<font color="rgb(%d,%d,%d)">', rgbColor.R * 255, rgbColor.G * 255, rgbColor.B * 255)
+			local result = last_color and '</font>' .. fontTag or fontTag
+			last_color = colorName
+			return result
+		else
+			return '@@' .. color .. '@@'
+		end
+	end)
 
--- Actors
+	if last_color then
+		msg = msg .. '</font>'
+	end
+	
+	if msg:match('<font color=".+">.+</font>') then
+	 if msg:match('<font color=".+"></font>') == msg then MessageColor = colors[last_color] return end
+	end
+	
+	local tmp = MessageTemplate:Clone()
+	tmp.Parent = CONSOLE.ConsoleFrame.Holder
+	tmp.Text = msg
+	tmp.Visible = true
+	tmp.TextColor3 = cc and cc or MessageColor
+end
+funcs.rconsoleinput = function()
+    local CONSOLE = ConsoleClone or Console
+    repeat task.wait() until ConsoleQueue:IsEmpty()
+    ConsoleQueue:Queue('input')
+    local box = InputTemplate:Clone()
+    local val
+    box.Parent = CONSOLE.ConsoleFrame.Holder
+    box.Visible = true
+    box.TextEditable = true
+    box.TextColor3 = MessageColor
 
-local actor_threads = setmetatable({}, {__mode = "v"})
-local comm_channels = {}
+    box.FocusLost:Connect(function(a)
+     if not a then return end
+     val = box.Text
+     ConsoleQueue:Update()
+    end)
 
-add("create_comm_channel", function()
-    local num = math.random(1, 99999)
-    local int = createBindable()
-    comm_channels[num] = int
-    return num, int
-end)
-
-add("get_comm_channel", function(id)
-    expect(id, "number", false, 1)
-    return comm_channels[id]
-end)
-
-add("run_on_actor", function(actor, scriptStr, ...)
-    assert(typeof(actor) == "Instance" and actor:IsA("Actor"), "expected Actor, got " .. typeof(actor))
-    expect(scriptStr, "string", false, 2)
-
-    local thread = task.spawn(function(...)
-        local fn, err = loadstring(scriptStr)
-        if not fn then error(err) end
-        setfenv(fn, getgenv())
-        fn(...)
-    end, ...)
-
-    actor_threads[#actor_threads + 1] = thread
-end)
-
-add("getactors", function()
-    local actors = {}
-    for _, v in ipairs(game:GetDescendants()) do
-        if v:IsA("Actor") then
-            actors[#actors + 1] = v
+    local FOCUSED = false
+    while true do
+     if box.Text:sub(#box.Text, #box.Text) == '_' or box.Text == '' or not box:IsFocused() then
+        box.TextColor3 = Color3.fromRGB(255, 255, 255)
+        box.Text = box.Text .. '_'
+        
+        for _ = 1, 100 do
+            task.wait(1/2)
+            if box:IsFocused() then
+                FOCUSED = true
+                box.TextColor3 = MessageColor
+                break
+            end
+            box.Text = box.Text:sub(#box.Text, #box.Text) == '_' and box.Text:sub(#box.Text-1, #box.Text-1) or box.Text .. '_'
         end
+        if FOCUSED then break end
+     else
+        task.wait(0.1)
+     end
     end
-    return actors
+    repeat task.wait() until val
+    return val
+end
+funcs.rconsolename = function(a)
+ if ConsoleClone then
+  ConsoleClone.ConsoleFrame.Title.Text = a
+ else
+  Console.ConsoleFrame.Title.Text = a
+ end
+end
+funcs.printconsole = function(msg, r, g, b)
+ r = r or 0
+ g = g or 0
+ b = b or 0
+ rconsoleprint(msg, Color3.fromRGB(r, g, b))
+end
+funcs.rconsoleclear = function()
+ if ConsoleClone then
+ for i, v in pairs(ConsoleClone.ConsoleFrame.Holder:GetChildren()) do
+  if v.ClassName == 'TextLabel' or v.ClassName == 'TextBox' then v:Destroy() end
+ end
+ else
+  for i, v in pairs(Console.ConsoleFrame.Holder:GetChildren()) do
+   if v.ClassName == 'TextLabel' or v.ClassName == 'TextBox' then v:Destroy() end
+  end
+ end
+end
+funcs.rconsoleinfo = function(a)
+ rconsoleprint('[INFO]: ' .. tostring(a))
+end
+funcs.rconsolewarn = function(a)
+ rconsoleprint('[*]: ' .. tostring(a))
+end
+funcs.rconsoleerr = function(a)
+ local clr = MessageColor
+ local oldColor
+ for i, v in pairs(colors) do
+  if clr == v then oldColor = i break end
+ end
+ rconsoleprint(string.format('[@@RED@@*@@%s@@]: %s', oldColor, tostring(a)))
+end
+funcs.rconsoleinputasync = funcs.rconsoleinput
+funcs.consolecreate = funcs.rconsolecreate
+funcs.consoleclear = funcs.rconsoleclear
+funcs.consoledestroy = funcs.rconsoledestroy
+funcs.consoleinput = funcs.rconsoleinput
+funcs.rconsolesettitle = funcs.rconsolename
+funcs.consolesettitle = funcs.rconsolename
+
+funcs.queue_on_teleport = function(scripttoexec) -- WARNING: MUST HAVE MOREUNC IN AUTO EXECUTE FOR THIS TO WORK.
+ local newTPService = {
+  __index = function(self, key)
+   if key == 'Teleport' then
+    return function(gameId, player, teleportData, loadScreen)
+      teleportData = {teleportData, MOREUNCSCRIPTQUEUE=scripttoexec}
+      return oldGame:GetService("TeleportService"):Teleport(gameId, player, teleportData, loadScreen)
+    end
+   end
+  end
+ }
+ local gameMeta = {
+  __index = function(self, key)
+    if key == 'GetService' then
+     return function(name)
+      if name == 'TeleportService' then return newTPService end
+     end
+    elseif key == 'TeleportService' then return newTPService end
+    return game[key]
+  end,
+  __metatable = 'The metatable is protected'
+ }
+ getgenv().game = setmetatable({}, gameMeta)
+end
+funcs.queueonteleport = funcs.queue_on_teleport
+
+local Count = 0
+local Total = 0
+
+local funcs2 = {}
+for i, _ in pairs(funcs) do
+ table.insert(funcs2, i)
+end
+table.sort(funcs2, function(a, b)
+ return string.byte(a:lower())<string.byte(b:lower())
 end)
 
-local cache, states = setmetatable({}, { __mode = "k" }), {}
-local gstate; local id = 0
-
-local function newState(isActor)
-    id += 1
-
-    local s = {
-        Id = id,
-        IsActorState = isActor and true or false,
-        _actors = {},
-        _scripts = {}
-    }
-
-    function s:GetActors()
-        return self._actors
-    end
-
-    function s:Execute(code)
-        expect(code, "string", false, 1)
-
-        local fn, err = loadstring(code)
-        if not fn then
-            error(err, 2)
-        end
-
-        return fn()
-    end
-
-    states[#states + 1] = s
-    return s
+for i, v in pairs(funcs2) do
+ if not getgenv()[i] then
+  Total = Total + 1
+ end
 end
 
-local function getState()
-    gstate = gstate or newState(false)
-    return gstate
-end
-
-add("getgamestate", function()
-    return getState()
-end)
-
-add("getactorstates", function()
-    return states
-end)
-
-add("getluastate", function(obj)
-    if not obj then
-        return getState()
-    end
-
-    expect(obj, "Instance", false, 1)
-
-    local s = cache[obj]
-    if s then return s end
-
-    if obj:IsA("Actor") then
-        s = newState(true)
-        s._actors[#s._actors + 1] = obj
-
-    elseif obj:IsA("BaseScript") then
-        local actor = obj:FindFirstAncestorOfClass("Actor")
-
-        if actor then
-            s = cache[actor] or newState(true)
-            cache[actor] = s
-            s._actors[#s._actors + 1] = actor
-        else
-            s = getState()
-        end
-
-        s._scripts[#s._scripts + 1] = obj
-    else
-        error("expected Actor or BaseScript")
-    end
-
-    cache[obj] = s
-    return s
-end)
-
-add("is_parallel", function()
-    return getthreadidentity() >= 8
-end)
-add("isparallel", function()
-    return is_parallel()
-end)
-
-local actor_event = createBindable()
-
-add("on_actor_added", actor_event)
-local function handle_actor(actor)
-    actor_event:Fire(actor)
-end
-
-game.DescendantAdded:Connect(function(obj)
-    if obj:IsA("Actor") then
-        handle_actor(obj)
-    end
-end)
-                                                      
-add("run_on_thread", function(thread, scriptStr, ...)
-    assert(type(thread) == "thread", "expected thread, got " .. type(thread))
-    expect(scriptStr, "string", false, 2)
-
-    local fn, err = loadstring(scriptStr)
-    if not fn then error(err) end
-    setfenv(fn, getgenv())
-
-    local t = task.spawn(function(...)
-        coroutine.resume(thread, fn, ...)
-    end, ...)
-
-    actor_threads[#actor_threads + 1] = t
-end)
-
-add("getactorthreads", function()
-    local alive = {}
-    for _, t in ipairs(actor_threads) do
-        if coroutine.status(t) ~= "dead" then
-            alive[#alive + 1] = t
-        end
-    end
-    return alive
-end)
-
-local adding = 0; genv["loaded"] = {}
-for name, func in pairs(functions) do
-    if typeof(name) ~= "string" then
-        continue
-    end
-
-    if getgenv()[name] then
-        continue
-    end
-
-    adding += 1
-    table.insert(genv["loaded"], {name = name, func = func})
-
-    getgenv()[name] = func
-end
-
-genv.unload = function(sp)
-    for i, item in ipairs(genv["loaded"]) do
-        if item.name then
-            getgenv()[item.name] = nil
-            adding -= 1
-        end
-    end
-
-    table.clear(genv["loaded"])
-end
+syn.protect_gui(DrawingDict)
+syn.protect_gui(ClipboardUI)
+QueueGetIdentity()
 
 getgenv().ArgusUNC_Loaded = true
+getgenv().ArgusPreLoad = true

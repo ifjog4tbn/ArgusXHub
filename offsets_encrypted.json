@@ -1,21 +1,21 @@
 {
   "offsets": {
-    "EnableLoadModule": "bca1b844cb739d116d7e2cffd9ebc863538124f1b9e7fbe668493f77d1ce2b14",
-    "FakeDataModelPointer": "35a5413167d6ee0483be2e1c267f340e4ae6b46ee73dc36ea8e67e44a990335d",
-    "FakeDataModelToDataModel": "a6b5bdd3455f3e0b74d3cd5c2e4d7782768a58d7e78ab72b6a29b34e6173d895",
-    "Children": "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
-    "ChildrenEnd": "beead77994cf573341ec17b58bbf7eb34d2711c993c1d976b128b3188dc1829a",
-    "Name": "f4f97c88c409dcf3789b5b518da3f7d266c488066e97a606e38a150779880735",
-    "Value": "d4b0c0a4a8cc6c257aed34d16d39dd3c2d3539ed67fd4badd40aef16c1591715",
-    "ClassDescriptor": "452ba1ddef80246c48be7690193c76c1d61185906be9401014fe14f1be64b74f",
-    "ClassDescriptorToClassName": "beead77994cf573341ec17b58bbf7eb34d2711c993c1d976b128b3188dc1829a",
-    "LocalScriptByteCode": "2d349913849afd254cbfd593eabab9e09f4bd2def42b8ed39486ae537cd00158",
-    "ModuleScriptByteCode": "2847213288f0988543a76512fab09684131809d98baa8b93c2cd8a03a0e31d41",
-    "BindableEvent_Signals": "7c5bd2d144fdde498406edcb9fe60ce65b0dfa5f2dd7a7617f505e3d46d68bdb",
-    "BindableEvent_Function": "beead77994cf573341ec17b58bbf7eb34d2711c993c1d976b128b3188dc1829a",
-    "BindableEvent_FunctionImpl": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
-    "BindableEvent_ThreadRef": "8d33f520a3c4cef80d2453aef81b612bfe1cb44c8b2025630ad38662763f13d3",
-    "BindableEvent_LiveThread": "36a9e7f1c95b82ffb99743e0c5c4ce95d83c9a430aac59f84ef3cbfab6145068",
-    "BindableEvent_LuaState": "beead77994cf573341ec17b58bbf7eb34d2711c993c1d976b128b3188dc1829a"
+    "EnableLoadModule": "4f45733241566330",
+    "FakeDataModelPointer": "4f45733241517530",
+    "FakeDataModelToDataModel": "4f45733245524cd7",
+    "Children": "4f45733245524e2f",
+    "ChildrenEnd": "4f45733245524e6f",
+    "Name": "4f45733245524edb",
+    "Value": "4f45733245524eb7",
+    "ClassDescriptor": "4f45733245524e7f",
+    "ClassDescriptorToClassName": "4f45733245524e6f",
+    "LocalScriptByteCode": "4f45733245524fdf",
+    "ModuleScriptByteCode": "4f45733245524f37",
+    "BindableEvent_Signals": "4f45733245524eaf",
+    "BindableEvent_Function": "4f45733245524e6f",
+    "BindableEvent_FunctionImpl": "4f45733245524e57",
+    "BindableEvent_ThreadRef": "4f45733245524e27",
+    "BindableEvent_LiveThread": "4f45733245524e67",
+    "BindableEvent_LuaState": "4f45733245524e6f"
   }
 }

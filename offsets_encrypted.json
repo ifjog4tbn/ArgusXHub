@@ -1,21 +1,21 @@
 {
   "offsets": {
-    "EnableLoadModule": "4f4573324233e75f",
-    "FakeDataModelPointer": "4f45733242027e0f",
-    "FakeDataModelToDataModel": "4f45733245524fe7",
-    "Children": "4f45733245524e4f",
-    "ChildrenEnd": "4f45733245524e3f",
-    "Name": "4f45733245524e87",
-    "Value": "4f45733245524ee7",
-    "ClassDescriptor": "4f45733245524e2f",
-    "ClassDescriptorToClassName": "4f45733245524e3f",
-    "LocalScriptByteCode": "4f45733245524f9f",
-    "ModuleScriptByteCode": "4f45733245524f67",
-    "BindableEvent_Signals": "4f45733245524eff",
-    "BindableEvent_Function": "4f45733245524e3f",
-    "BindableEvent_FunctionImpl": "4f45733245524e07",
-    "BindableEvent_ThreadRef": "4f45733245524e57",
-    "BindableEvent_LiveThread": "4f45733245524e17",
-    "BindableEvent_LuaState": "4f45733245524e3f"
+    "EnableLoadModule": "4F4573324233E75F",
+    "FakeDataModelPointer": "4F45733242027E0F",
+    "FakeDataModelToDataModel": "4F45733245524FE7",
+    "Children": "4F45733245524E4F",
+    "ChildrenEnd": "4F45733245524E3F",
+    "Name": "4F45733245524E87",
+    "Value": "4F45733245524EE7",
+    "ClassDescriptor": "4F45733245524E2F",
+    "ClassDescriptorToClassName": "4F45733245524E3F",
+    "LocalScriptByteCode": "4F45733245524F9F",
+    "ModuleScriptByteCode": "4F45733245524F67",
+    "BindableEvent_Signals": "4F45733245524EFF",
+    "BindableEvent_Function": "4F45733245524E3F",
+    "BindableEvent_FunctionImpl": "4F45733245524E07",
+    "BindableEvent_ThreadRef": "4F45733245524E57",
+    "BindableEvent_LiveThread": "4F45733245524E17",
+    "BindableEvent_LuaState": "4F45733245524E3F"
   }
 }

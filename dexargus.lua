@@ -5969,14 +5969,37 @@ ScriptViewer.EditedScriptsCache = setmetatable({}, {__mode = "k"})
 	end
 	
 	ScriptViewer.ViewScript = function(scr)
-		-- Never call native getscriptbytecode/decompile from Dex UI — AVs are uncatchable.
-		local source = "-- failed to read script bytecode\n-- (ArgusX: View Script soft-stub; use decompile_http manually if needed)\n"
-		PreviousScr = nil
-		pcall(function()
-			if dumpbtn then dumpbtn.TextColor3 = Color3.new(0.5,0.5,0.5) end
-			if typeof(scr) == "Instance" then
-				source = source .. "-- Script: " .. tostring(scr:GetFullName()) .. "\n"
+		local source = "-- Unable to view source.\n"
+		local oldtick = tick()
+		local ok, decompiledSrc = pcall(function()
+			local dec = env.decompile or decompile
+			if type(dec) ~= "function" then
+				return nil
 			end
+			return dec(scr)
+		end)
+
+		if ok and type(decompiledSrc) == "string" and #decompiledSrc > 0 then
+			PreviousScr = scr
+			if dumpbtn then dumpbtn.TextColor3 = Color3.new(1,1,1) end
+			local Header = ""
+			pcall(function()
+				Header = "-- Script Path: "..getPath(scr).."\n"
+				if Settings.ScriptViewer and Settings.ScriptViewer.ShowMoreInfo then
+					Header = Header .. "-- Took "..tostring(math.floor( (tick() - oldtick) * 100) / 100).."s to decompile.\n"
+					Header = Header .. "-- Executor: "..tostring(executorName).." ("..tostring(executorVersion)..")\n\n"
+				end
+			end)
+			source = Header .. decompiledSrc
+		else
+			PreviousScr = nil
+			if dumpbtn then dumpbtn.TextColor3 = Color3.new(0.5,0.5,0.5) end
+			if type(decompiledSrc) == "string" and #decompiledSrc > 0 then
+				source = decompiledSrc
+			end
+		end
+
+		pcall(function()
 			codeFrame.Editable = false
 			if ScriptViewer.EditButton then
 				ScriptViewer.IsEditing = false
@@ -19806,14 +19829,36 @@ end
 		end
 
 		env.decompile = function(...)
-			-- Hard soft-stub: never call executor/fallback decompilers from Dex.
-			-- Native AV in getscriptbytecode is not catchable by pcall.
-			return "-- failed to read script bytecode"
+			local args = { ... }
+			local prefer_fallback = Settings.Decompiler and Settings.Decompiler.PreferDecompilerFallback == true
+			local ok, result = pcall(function()
+				-- Prefer executor global decompile (lua.expert boot).
+				if type(executor_decompile) == "function" and not prefer_fallback then
+					return executor_decompile(table.unpack(args))
+				end
+				local fallbackMode = Settings.Decompiler and Settings.Decompiler.DecompilerFallback or "Konstant"
+				if fallbackMode == "Konstant" then return KonstantDec(args[1])
+				elseif fallbackMode == "AdvancedDecompiler" then return ADDec(table.unpack(args))
+				elseif fallbackMode == "Shiny" then return ShinyDec(args[1])
+				elseif fallbackMode == "LuaExpert" then return LuaExpertDec(args[1])
+				elseif fallbackMode == "Sabre" then return SabreDec(args[1])
+				elseif fallbackMode == "x2125" then return X2125Dec(args[1])
+				elseif fallbackMode == "Bytefall" then return BytefallDec(args[1])
+				elseif fallbackMode == "Disassembly" then return DisassemblyDec(args[1])
+				end
+				return "-- decompile unavailable"
+			end)
+			if not ok then
+				return "-- decompile error: " .. tostring(result)
+			end
+			if type(result) ~= "string" then
+				return "-- decompile failed"
+			end
+			return result
 		end
 
-		env.getscriptbytecode = function(...)
-			return nil
-		end
+		-- Keep safe wrapper (already assigned above); do not nil it out.
+		env.getscriptbytecode = safe_getscriptbytecode
 
 		env.isViableDecompileScript = function(obj)
 			if obj:IsA("ModuleScript") then

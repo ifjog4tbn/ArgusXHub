@@ -1,5 +1,11 @@
 [
   {
+    "user": "system_master404",
+    "rank": "Dark",
+    "hidden_watermark": false,
+    "blacklisted": false
+  },
+  {
     "user": "lnspector_Gadgel",
     "rank": "Dark",
     "hidden_watermark": false,

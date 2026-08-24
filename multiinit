@@ -1,3 +1,5 @@
+if getgenv and getgenv().MoreUNC then return end
+
 -- Definitions
 local table = table.clone(table) -- Prevent modifications from other scripts
 local debug = table.clone(debug) -- ^^^^
@@ -50,7 +52,6 @@ version = version
 local HttpService = game:GetService('HttpService');
 local Log = game:GetService('LogService');
 
--- Load proprerties (CREDITS TO DEUCES ON DISCORD)
 local API_Dump_Url = "https://raw.githubusercontent.com/MaximumADHD/Roblox-Client-Tracker/roblox/Mini-API-Dump.json"
 local API_Dump = game:HttpGet(API_Dump_Url)
 local Hidden = {}
@@ -1656,7 +1657,7 @@ funcs.consoleinput = funcs.rconsoleinput
 funcs.rconsolesettitle = funcs.rconsolename
 funcs.consolesettitle = funcs.rconsolename
 
-funcs.queue_on_teleport = function(scripttoexec) -- WARNING: MUST HAVE MOREUNC IN AUTO EXECUTE FOR THIS TO WORK.
+funcs.queue_on_teleport = function(scripttoexec)
  local newTPService = {
   __index = function(self, key)
    if key == 'Teleport' then
@@ -1693,10 +1694,13 @@ table.sort(funcs2, function(a, b)
  return string.byte(a:lower())<string.byte(b:lower())
 end)
 
-for i, v in next, funcs do
-    if getgenv()[i] == nil then
-        getgenv()[i] = v
-    end
+for i, v in pairs(funcs2) do
+ if not getgenv()[i] then
+  Total = Total + 1
+ end
 end
 
-getgenv().ArgusUNC_Loaded = true
+syn.protect_gui(DrawingDict)
+syn.protect_gui(ClipboardUI)
+QueueGetIdentity()
+getgenv().MoreUNC = true

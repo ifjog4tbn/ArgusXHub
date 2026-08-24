@@ -390,23 +390,6 @@ local function stopDrag(input)
 end
 
 -- Main Functions
-function QueueGetIdentity()
-  printidentity()
-  task.wait(.1)
-  local messages = Log:GetLogHistory()
-  local message;
-  if not messages[#messages].message:match("Current identity is") then
-   for i = #messages, 1, -1 do
-    if messages[i].message:match("Current identity is %d") then
-     message = messages[i].message
-     break
-    end
-   end
-  else
-   message = messages[#messages].message:match('Current identity is %d'):gsub("Current identity is ", '')
-  end
-  Identity = tonumber(message)
-end
 local Queue = {}
 Queue.__index = Queue
 function Queue.new()
@@ -1507,7 +1490,6 @@ funcs.checkcaller = function()
 end
 funcs.getthreadcontext = function() -- funny little way of getting this
  if coroutine.isyieldable(coroutine.running()) then -- check if u can use task.wait or not
-  QueueGetIdentity()
   task.wait(.1)
   return tonumber(Identity)
  else
@@ -1697,5 +1679,3 @@ for i, v in pairs(funcs2) do
   Total = Total + 1
  end
 end
-
-QueueGetIdentity()

@@ -1,5 +1,3 @@
-if getgenv and getgenv().MoreUNC then return end
-
 -- Definitions
 local table = table.clone(table) -- Prevent modifications from other scripts
 local debug = table.clone(debug) -- ^^^^
@@ -1700,7 +1698,4 @@ for i, v in pairs(funcs2) do
  end
 end
 
-syn.protect_gui(DrawingDict)
-syn.protect_gui(ClipboardUI)
 QueueGetIdentity()
-getgenv().MoreUNC = true

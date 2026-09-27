@@ -5,6 +5,7 @@ local Games = {
     [78475473751685] = "https://gist.githubusercontent.com/Offsetmanager/c617794e7f9791b74877d8148855ba95/raw/7cfe68a14ddeb64cb351332ebbe8be6d8a352dad/gistfile1.txt",
     [133769280473647] = "https://gist.githubusercontent.com/Offsetmanager/05d076822b92e7a19f67323bf1c5fdf5/raw/c9fff90fbf0d8a2131ba2dbb566666d875187bb2/gistfile1.txt",
     [130172344017004] = "https://gist.githubusercontent.com/Offsetmanager/05d076822b92e7a19f67323bf1c5fdf5/raw/c9fff90fbf0d8a2131ba2dbb566666d875187bb2/gistfile1.txt",
+    [103854444055060] = "https://gist.githubusercontent.com/Offsetmanager/d17c0ef63e2527419f85a7c1a8c41b52/raw/18f41884910961722c8f83c938e2eabae41d7a0a/gistfile1.txt",
 }
 local Players = game:GetService("Players") local LocalPlayer = Players.LocalPlayer local url = Games[game.PlaceId]
 if url then loadstring(game:HttpGet(url))() else LocalPlayer:Kick("Not found your game, ask hub owner for help.") end

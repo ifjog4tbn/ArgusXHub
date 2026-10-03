@@ -1,8 +1,8 @@
 {
-  "latest": "1.1",
+  "latest": "1.0",
   "versions": [
-    { "interface": "1.0", "roblox": "version-02c37bc51a384b8f" },
-    { "interface": "1.1", "roblox": "version-02c37bc51a384b8f" }
+    // { "interface": "1.1", "roblox": "version-02c37bc51a384b8f" },
+    { "interface": "1.0", "roblox": "version-02c37bc51a384b8f" }
   ],
   "changelog": [
     // { "version": "1.1", "date": "2026-10-03", "interfaces": ["1.0", "1.1"], "items": ["Test"] },

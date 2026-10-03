@@ -1,7 +1,7 @@
 {
-  "latest": "1.0",
+  "latest": "1.1",
   "versions": [
-    { "interface": "1.0", "roblox": "version-02c37bc51a384b8f" }
-    // { "interface": "1.1", "roblox": "version-AAAA..." }
+    { "interface": "1.0", "roblox": "version-02c37bc51a384b8f" },
+    { "interface": "1.1", "roblox": "version-AAAA..." }
   ]
 }
